@@ -1,8 +1,13 @@
+import { handleSyncStatus } from "./admin";
+
 export default {
-  fetch(request): Response {
+  fetch(request, env): Response | Promise<Response> {
     const url = new URL(request.url);
     if (request.method === "GET" && url.pathname === "/healthz") {
       return Response.json({ ok: true });
+    }
+    if (request.method === "GET" && url.pathname === "/admin/sync") {
+      return handleSyncStatus(request, env);
     }
     return new Response("Not Found", { status: 404 });
   },

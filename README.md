@@ -63,14 +63,17 @@ A sync state table alongside these records the last window read per event type. 
 | Secret         | Location                              | Consumer                     |
 | -------------- | ------------------------------------- | ---------------------------- |
 | `GITHUB_TOKEN` | Worker secret (`wrangler secret put`) | Every GitHub GraphQL request |
+| `ADMIN_TOKEN`  | Worker secret (`wrangler secret put`) | Bearer auth on `/admin/sync` |
 
-The token's scope decides what the hub can see. What it publishes is a separate question, still open in [docs/design.md](docs/design.md).
+The GitHub token's scope decides what the hub can see. What it publishes is a separate question, still open in [docs/design.md](docs/design.md).
+
+`ADMIN_TOKEN` is optional. Without it `/admin/sync` answers 404, so a deployment that has not set one exposes no admin surface at all.
 
 ## Infrastructure
 
 `wrangler.jsonc` owns the Worker, the `DB` D1 binding, the `RAW` and `LAKE` R2 bindings for `code-hub-raw` and `activity-hub-lake`, and the hourly cron trigger. The service binding to the site joins them when publishing lands. Migrations apply to production D1 from CI on merge to `main`.
 
-There is no Terraform here. Activity Hub needs it for a DNS record, a Workers route, and the Cloudflare Access applications in front of its admin routes. This hub is reached by cron and by a service binding. It has no hostname to manage until it grows an admin route of its own.
+There is no Terraform here. Activity Hub needs it for a DNS record, a Workers route, and the Cloudflare Access applications in front of its admin routes. This hub is reached by cron and by a service binding, so it has no hostname to manage. `/admin/sync` sits behind `ADMIN_TOKEN` alone, with no Access application in front of it.
 
 ## Development
 

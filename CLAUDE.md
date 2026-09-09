@@ -28,4 +28,4 @@ Change Cloudflare resources (R2 buckets, D1 databases, cron triggers, secrets) t
 
 ## Secrets
 
-Worker secrets are set with `wrangler secret put`, never committed. `wrangler dev` reads them from `.dev.vars`, which is gitignored. `GITHUB_TOKEN` will be the first: the GraphQL and search APIs both need it, and it sees private repositories, so what the feed publishes about them is a decision the ingest path owns. Public, non-sensitive identifiers belong in `wrangler.jsonc` as `vars`.
+Worker secrets are set with `wrangler secret put`, never committed. `wrangler dev` reads them from `.dev.vars`, which is gitignored. `GITHUB_TOKEN` will be the first: the GraphQL and search APIs both need it, and it sees private repositories, so what the feed publishes about them is a decision the ingest path owns. `ADMIN_TOKEN` guards `GET /admin/sync`, and the route answers 404 while it is unset so an unconfigured deployment has no admin surface. Public, non-sensitive identifiers belong in `wrangler.jsonc` as `vars`.
