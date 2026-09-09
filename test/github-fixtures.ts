@@ -1,3 +1,11 @@
+import type {
+  ContributionsCollection,
+  IssueNode,
+  PullRequestNode,
+  Repository,
+  ReviewedPullRequestNode,
+} from "../src/github/schema";
+
 export interface RateLimitOverrides {
   cost?: number;
   remaining?: number;
@@ -12,7 +20,7 @@ export function rateLimit(overrides: RateLimitOverrides = {}) {
   };
 }
 
-export function repository(name = "code-hub") {
+export function repository(name = "code-hub", overrides: Partial<Repository> = {}): Repository {
   return {
     id: `R_${name}`,
     name,
@@ -24,10 +32,14 @@ export function repository(name = "code-hub") {
     createdAt: "2026-08-01T00:00:00Z",
     isFork: false,
     visibility: "PUBLIC",
+    ...overrides,
   };
 }
 
-export function pullRequest(number: number) {
+export function pullRequest(
+  number: number,
+  overrides: Partial<PullRequestNode> = {},
+): PullRequestNode {
   return {
     __typename: "PullRequest",
     id: `PR_${number}`,
@@ -45,10 +57,25 @@ export function pullRequest(number: number) {
     reviews: { totalCount: 2 },
     updatedAt: "2026-08-03T00:00:00Z",
     repository: repository(),
+    ...overrides,
   };
 }
 
-export function reviewedPullRequest(number: number) {
+type ReviewNode = ReviewedPullRequestNode["reviews"]["nodes"][number];
+
+export function review(number: number, overrides: Partial<ReviewNode> = {}): ReviewNode {
+  return {
+    id: `PRR_${number}`,
+    state: "APPROVED",
+    submittedAt: "2026-08-03T00:00:00Z",
+    ...overrides,
+  };
+}
+
+export function reviewedPullRequest(
+  number: number,
+  overrides: Partial<ReviewedPullRequestNode> = {},
+): ReviewedPullRequestNode {
   return {
     __typename: "PullRequest",
     id: `PR_${number}`,
@@ -56,15 +83,13 @@ export function reviewedPullRequest(number: number) {
     title: `pull request ${number}`,
     author: { login: "someone" },
     updatedAt: "2026-08-03T00:00:00Z",
-    reviews: {
-      totalCount: 1,
-      nodes: [{ id: `PRR_${number}`, state: "APPROVED", submittedAt: "2026-08-03T00:00:00Z" }],
-    },
+    reviews: { totalCount: 1, nodes: [review(number)] },
     repository: repository(),
+    ...overrides,
   };
 }
 
-export function issue(number: number) {
+export function issue(number: number, overrides: Partial<IssueNode> = {}): IssueNode {
   return {
     __typename: "Issue",
     id: `I_${number}`,
@@ -77,6 +102,7 @@ export function issue(number: number) {
     comments: { totalCount: 0 },
     updatedAt: "2026-08-02T00:00:00Z",
     repository: repository(),
+    ...overrides,
   };
 }
 
@@ -85,9 +111,11 @@ export interface SearchOverrides {
   endCursor?: string | null;
 }
 
-export function searchResponse(nodes: unknown[], overrides: SearchOverrides = {}) {
+// The payload is the whole GraphQL response, which is what R2 archives and what
+// replay reads back, so a replay test and a fetch stub build from one shape.
+export function searchPayload(nodes: readonly unknown[], overrides: SearchOverrides = {}) {
   const endCursor = overrides.endCursor ?? null;
-  return jsonResponse({
+  return {
     data: {
       search: {
         issueCount: overrides.issueCount ?? nodes.length,
@@ -96,37 +124,62 @@ export function searchResponse(nodes: unknown[], overrides: SearchOverrides = {}
       },
       rateLimit: rateLimit(),
     },
-  });
+  };
 }
 
-export function commitContributions(count: number, dayTotal = 1) {
+export function searchResponse(nodes: readonly unknown[], overrides: SearchOverrides = {}) {
+  return jsonResponse(searchPayload(nodes, overrides));
+}
+
+export function commitDay(commitCount = 4, occurredAt = "2026-08-02T00:00:00Z") {
+  return { commitCount, occurredAt };
+}
+
+export function commitContributions(
+  count: number,
+  dayTotal = 1,
+): ContributionsCollection["commitContributionsByRepository"] {
   return Array.from({ length: count }, (_, index) => ({
     repository: repository(`repo-${index}`),
-    contributions: {
-      totalCount: dayTotal,
-      nodes: [{ commitCount: 4, occurredAt: "2026-08-02T00:00:00Z" }],
-    },
+    contributions: { totalCount: dayTotal, nodes: [commitDay()] },
   }));
 }
 
-export function contributionsResponse(repositoryCount: number, dayTotal = 1) {
-  return jsonResponse({
+export function contributionsCollection(
+  repositoryCount: number,
+  dayTotal = 1,
+  overrides: Partial<ContributionsCollection> = {},
+): ContributionsCollection {
+  return {
+    totalCommitContributions: 120,
+    totalPullRequestContributions: 40,
+    totalPullRequestReviewContributions: 12,
+    totalIssueContributions: 8,
+    totalRepositoriesWithContributedCommits: repositoryCount,
+    restrictedContributionsCount: 0,
+    contributionYears: [2026, 2025],
+    commitContributionsByRepository: commitContributions(repositoryCount, dayTotal),
+    ...overrides,
+  };
+}
+
+export function contributionsPayload(
+  repositoryCount: number,
+  dayTotal = 1,
+  overrides: Partial<ContributionsCollection> = {},
+) {
+  return {
     data: {
       user: {
-        contributionsCollection: {
-          totalCommitContributions: 120,
-          totalPullRequestContributions: 40,
-          totalPullRequestReviewContributions: 12,
-          totalIssueContributions: 8,
-          totalRepositoriesWithContributedCommits: repositoryCount,
-          restrictedContributionsCount: 0,
-          contributionYears: [2026, 2025],
-          commitContributionsByRepository: commitContributions(repositoryCount, dayTotal),
-        },
+        contributionsCollection: contributionsCollection(repositoryCount, dayTotal, overrides),
       },
       rateLimit: rateLimit(),
     },
-  });
+  };
+}
+
+export function contributionsResponse(repositoryCount: number, dayTotal = 1) {
+  return jsonResponse(contributionsPayload(repositoryCount, dayTotal));
 }
 
 export function jsonResponse(body: unknown, status = 200): Response {
