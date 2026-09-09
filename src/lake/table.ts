@@ -53,8 +53,6 @@ export async function readRows(
   const rows: Record<string, unknown>[] = [];
   let page: Record<string, unknown>[] = [];
 
-  // A cursor loop: each page is asked for only once the one before it came back
-  // full, since a short page is the end of the table.
   do {
     // eslint-disable-next-line no-await-in-loop
     const result = await statement.bind(rows.length).all<Record<string, unknown>>();
