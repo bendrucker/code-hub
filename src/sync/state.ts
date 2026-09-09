@@ -14,8 +14,7 @@ function key(kind: SyncKind): string {
 }
 
 // The last window normalized successfully. It advances only once the pages are
-// in R2 and the rows are in D1, which is why it is its own call rather than
-// something finishing a run does.
+// in R2 and the rows are in D1.
 export async function advance(
   db: D1Database,
   kind: SyncKind,
