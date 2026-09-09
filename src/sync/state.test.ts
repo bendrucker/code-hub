@@ -22,6 +22,16 @@ describe("advance", () => {
     });
   });
 
+  it("refuses to rewind, so a backfill cannot undo a caught-up kind", async () => {
+    await advance(env.DB, "pr-authored", "2026-09-09T12:00:00.000Z", "2026-09-09T12:00:00Z");
+    await advance(env.DB, "pr-authored", "2013-04-30T23:59:59.999Z", "2026-09-09T18:00:00Z");
+
+    expect(await readWatermark(env.DB, "pr-authored")).toEqual({
+      window: "2026-09-09T12:00:00.000Z",
+      updatedAt: "2026-09-09T12:00:00Z",
+    });
+  });
+
   it("leaves the other kinds where they were", async () => {
     await advance(env.DB, "contributions", "2026", "2026-09-09T18:00:00Z");
 

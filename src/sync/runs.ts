@@ -12,6 +12,7 @@ export interface SyncRun {
   rowsChanged: number;
   truncated: boolean;
   error: string | null;
+  note: string | null;
 }
 
 export interface RunResult {
@@ -19,6 +20,9 @@ export interface RunResult {
   rowsChanged: number;
   truncated: boolean;
   error: string | null;
+  // Something worth reading that did not stop the run, which today means the
+  // contributions cross-check disagreeing with the event tables.
+  note: string | null;
 }
 
 interface RunRow {
@@ -31,10 +35,11 @@ interface RunRow {
   rows_changed: number;
   truncated: number;
   error: string | null;
+  note: string | null;
 }
 
 const selection =
-  "SELECT id, kind, window, started_at, finished_at, pages, rows_changed, truncated, error FROM sync_runs";
+  "SELECT id, kind, window, started_at, finished_at, pages, rows_changed, truncated, error, note FROM sync_runs";
 
 export async function startRun(
   db: D1Database,
@@ -59,10 +64,18 @@ export async function finishRun(
 ): Promise<void> {
   await db
     .prepare(
-      "UPDATE sync_runs SET finished_at = ?2, pages = ?3, rows_changed = ?4, truncated = ?5, error = ?6" +
+      "UPDATE sync_runs SET finished_at = ?2, pages = ?3, rows_changed = ?4, truncated = ?5, error = ?6, note = ?7" +
         " WHERE id = ?1",
     )
-    .bind(id, at, result.pages, result.rowsChanged, result.truncated ? 1 : 0, result.error)
+    .bind(
+      id,
+      at,
+      result.pages,
+      result.rowsChanged,
+      result.truncated ? 1 : 0,
+      result.error,
+      result.note,
+    )
     .run();
 }
 
@@ -110,5 +123,6 @@ function toRun(row: RunRow): SyncRun {
     rowsChanged: row.rows_changed,
     truncated: row.truncated !== 0,
     error: row.error,
+    note: row.note,
   };
 }

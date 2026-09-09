@@ -8,6 +8,16 @@
   "observability": {
     "enabled": true,
   },
+  "vars": {
+    // Public identifier rather than a secret. The token that reads GitHub is a
+    // Worker secret. Whose history it reads is not.
+    "GITHUB_LOGIN": "bendrucker",
+    // Months a single POST /admin/backfill call walks. A paid invocation gets
+    // 1,000 subrequests and the free tier 50, and each window is a search page
+    // plus its R2 write and its D1 writes, so the walk is paged across calls
+    // before the wall clock is the constraint.
+    "BACKFILL_WINDOWS": 12,
+  },
   "triggers": {
     // Hourly incremental sync. GitHub's search API is windowed by date rather
     // than by event, so a missed run costs nothing but a wider next window.

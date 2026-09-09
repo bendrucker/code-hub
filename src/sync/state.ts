@@ -1,6 +1,10 @@
 import { byKind, SYNC_KINDS, type SyncKind } from "./kinds";
 
 export interface Watermark {
+  // An ISO instant meaning synced through. Every kind is caught up to it, so an
+  // incremental window anchors on it and a month key never reaches
+  // `incrementalSearch`, where `updated:>2013-04` would match a decade of
+  // events against a 1,000-result cap.
   window: string;
   updatedAt: string;
 }
@@ -13,8 +17,10 @@ function key(kind: SyncKind): string {
   return `${prefix}${kind}`;
 }
 
-// The last window normalized successfully. It advances only once the pages are
-// in R2 and the rows are in D1.
+// Called only once the pages are in R2 and the rows are in D1. Forward only,
+// because a backfill of 2013 runs the same code path as the hourly sync and
+// would otherwise rewind a caught-up kind to a decade ago. The comparison is
+// lexicographic, which is an ordering on ISO instants.
 export async function advance(
   db: D1Database,
   kind: SyncKind,
@@ -24,7 +30,8 @@ export async function advance(
   await db
     .prepare(
       "INSERT INTO sync_state (key, value, updated_at) VALUES (?1, ?2, ?3)" +
-        " ON CONFLICT (key) DO UPDATE SET value = excluded.value, updated_at = excluded.updated_at",
+        " ON CONFLICT (key) DO UPDATE SET value = excluded.value, updated_at = excluded.updated_at" +
+        " WHERE excluded.value > sync_state.value",
     )
     .bind(key(kind), window, at)
     .run();

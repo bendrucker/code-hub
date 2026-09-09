@@ -4,6 +4,12 @@ import type { EventKind } from "../github/windows";
 // added there breaks byKind below until this module covers it too.
 export type SyncKind = EventKind | "contributions";
 
+export const SEARCH_KINDS = [
+  "pr-authored",
+  "pr-reviewed",
+  "issue",
+] as const satisfies readonly EventKind[];
+
 export const SYNC_KINDS = [
   "pr-authored",
   "pr-reviewed",
