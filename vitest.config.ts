@@ -13,7 +13,7 @@ export default defineConfig(async () => {
       }),
     ],
     test: {
-      setupFiles: ["./test/apply-migrations.ts"],
+      setupFiles: ["./test/apply-migrations.ts", "./test/reset-tables.ts"],
     },
   };
 });
