@@ -18,7 +18,7 @@ Cloudflare Workers (TypeScript), Bun, Wrangler. Storage: D1 (`DB`), R2 (`RAW` fo
 
 ## Deploy
 
-CI runs on every push and PR (`.github/workflows/ci.yml`): typecheck, test, lint, format check, and a check that `worker-configuration.d.ts` matches `wrangler.jsonc`.
+CI runs on every PR and on push to `main` (`.github/workflows/ci.yml`): typecheck, test, lint, format check, and a check that `worker-configuration.d.ts` is current.
 
 Deploys are not wired up. The repository has no `CLOUDFLARE_API_TOKEN` secret, so there is no deploy job yet. Adding one means copying activity-hub's: apply D1 migrations, then `wrangler deploy`, gated on `check` and on push to `main`. Until then, migrations in `migrations/` apply by hand with `wrangler d1 migrations apply code-hub --remote`.
 
@@ -28,4 +28,4 @@ Change Cloudflare resources (R2 buckets, D1 databases, cron triggers, secrets) t
 
 ## Secrets
 
-Worker secrets are set with `wrangler secret put`, never committed. `GITHUB_TOKEN` will be the first: the GraphQL and search APIs both need it, and it sees private repositories, so what the feed publishes about them is a decision the ingest path owns. Public, non-sensitive identifiers belong in `wrangler.jsonc` as `vars`.
+Worker secrets are set with `wrangler secret put`, never committed. `wrangler dev` reads them from `.dev.vars`, which is gitignored. `GITHUB_TOKEN` will be the first: the GraphQL and search APIs both need it, and it sees private repositories, so what the feed publishes about them is a decision the ingest path owns. Public, non-sensitive identifiers belong in `wrangler.jsonc` as `vars`.
