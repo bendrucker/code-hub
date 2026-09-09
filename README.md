@@ -1,12 +1,12 @@
 # Code Hub
 
-System of record for my GitHub contribution data. An hourly Worker pulls pull requests, reviews, issues, and commit counts from GitHub's GraphQL API, archives every response page in R2, and publishes one row per event to [bendrucker.me](https://github.com/bendrucker/bendrucker.me).
+System of record for my GitHub contribution data. An hourly Worker pulls pull requests, reviews, issues, and commit counts from GitHub's GraphQL API, archives every response page in R2, and publishes one row per event to [bendrucker/bendrucker.me](https://github.com/bendrucker/bendrucker.me).
 
 ## Why
 
 The website's own GitHub sync stores one aggregate row per repository per year. That shape cannot answer "this month", cannot count lifetime repositories without double counting one across years, and cannot produce a record like largest PR or most reviews in a week. Every new number on the homepage costs another aggregate table, a backfill script, and a cache validator. One row per event makes each of those a SQL query instead.
 
-[Activity Hub](https://github.com/bendrucker/activity-hub) is the sibling project and the wrong home for this. Its pipeline is built on one activity being one raw file: a webhook delivers a pointer, the original FIT or GPX becomes the immutable record in R2, and a container decodes it into Parquet. GitHub has no file per event, no webhook for repositories you contribute to but do not own, and nothing to decode. What carries over is the boundary layer rather than the pipeline: raw responses in R2 before anything normalizes them, Parquet into the same lake bucket, and the site's `Publish` entrypoint as the only write path.
+[Activity Hub](https://github.com/bendrucker/activity-hub) is the sibling project and the wrong home for this. Its pipeline is built on one activity being one raw file: a webhook delivers a pointer, the original FIT or GPX becomes the immutable record in R2, and a container decodes it into Parquet. GitHub has no file per event, no webhook for repositories I contribute to but do not own, and nothing to decode. What carries over is the boundary layer rather than the pipeline: raw responses in R2 before anything normalizes them, Parquet into the same lake bucket, and the site's `Publish` entrypoint as the only write path.
 
 ## Architecture
 
@@ -19,8 +19,9 @@ flowchart TB
     subgraph hub [code-hub]
         cron[Hourly cron]
         worker[Worker]
-        raw[(R2 raw pages)]
+        raw[(R2 code-hub-raw)]
         d1[(D1 events)]
+        feed[Feed publish]
         lakecron[Nightly lake build]
     end
 
@@ -31,7 +32,7 @@ flowchart TB
     worker -->|search and contributionsCollection| api
     api -->|response pages| raw
     raw -->|normalize| d1
-    d1 -->|code feed rows| site
+    d1 --> feed -->|code feed rows| site
     d1 --> lakecron --> lake
 ```
 
@@ -49,13 +50,13 @@ One row per event, at the grain GitHub hands over without crawling each reposito
 
 | Table           | Grain                                                                                                                                  |
 | --------------- | -------------------------------------------------------------------------------------------------------------------------------------- |
-| `pull_requests` | One PR I authored: repository, number, title, created, merged or closed at, state, additions, deletions, changed files, comment and review counts |
+| `pull_requests` | One PR I authored: repository, number, title, created at, merged at, closed at, state, additions, deletions, changed files, comment and review counts, base repository visibility |
 | `reviews`       | One review I gave: repository, PR number, state, submitted at, PR author                                                                |
-| `issues`        | One issue: repository, number, created, closed at, state, comment count                                                                 |
+| `issues`        | One issue: repository, number, title, created at, closed at, state, comment count                                                                 |
 | `commit_days`   | One repository on one day, carrying that day's commit count                                                                             |
 | `repositories`  | The dimension: owner, name, description, url, stars, primary language, created at, fork, visibility                                     |
 
-Commits are daily counts because that is how `contributionsCollection` already exposes them. Per-commit history, comment bodies, and individual review comments stay out of the first version. Each one needs a walk of every PR in every repository, and per-PR counts give most of the analytics value at a hundredth of the requests.
+A sync state table alongside these records the last window read per event type. Commits are daily counts because that is how `contributionsCollection` already exposes them. Per-commit history, comment bodies, and individual review comments stay out of the first version. Each one needs a walk of every PR in every repository, and per-PR counts give most of the analytics value at a hundredth of the requests.
 
 ## Secrets
 
@@ -67,7 +68,7 @@ The token's scope decides what the hub can see. What it publishes is a separate 
 
 ## Infrastructure
 
-`wrangler.jsonc` owns the Worker, the D1 binding, the two R2 buckets, and the cron trigger. Migrations apply to production D1 from CI on merge to `main`.
+`wrangler.jsonc` owns the Worker, the `DB` D1 binding, the `RAW` and `LAKE` R2 bindings for `code-hub-raw` and `activity-hub-lake`, and the hourly cron trigger. The service binding to the site joins them when publishing lands. Migrations apply to production D1 from CI on merge to `main`.
 
 There is no Terraform here. Activity Hub needs it for a DNS record, a Workers route, and the Cloudflare Access applications in front of its admin routes. This hub is reached by cron and by a service binding. It has no hostname to manage until it grows an admin route of its own.
 
