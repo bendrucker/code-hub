@@ -1,0 +1,25 @@
+repos:
+  - repo: https://github.com/pre-commit/pre-commit-hooks
+    rev: v6.0.0
+    hooks:
+      - id: check-merge-conflict
+      - id: no-commit-to-branch
+        args: [--branch, main]
+      - id: check-added-large-files
+        args: [--maxkb=1024]
+  - repo: https://github.com/oxc-project/mirrors-oxfmt
+    rev: v0.67.0
+    hooks: [{ id: oxfmt }]
+  - repo: https://github.com/oxc-project/mirrors-oxlint
+    rev: v1.82.0
+    hooks: [{ id: oxlint }]
+  # ast-grep runs from the pinned devDependency rather than a mirror, so the
+  # rule and the binary that reads it move together.
+  - repo: local
+    hooks:
+      - id: ast-grep
+        name: ast-grep
+        entry: bun run --silent ast-grep scan
+        language: system
+        types_or: [ts]
+        pass_filenames: false
