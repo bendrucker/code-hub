@@ -57,9 +57,8 @@ export function backfillSearch(kind: EventKind, login: string, window: MonthWind
   return `${scope(kind, login)} created:${window.start}..${window.end}`;
 }
 
-// The incremental run is the same code path with a different window. GitHub's
-// search index lags writes, so `since` is set behind the last sync and the
-// overlap is free against upserts keyed on node ID.
+// GitHub's search index lags writes, so `since` is set behind the last sync and
+// the overlap is free against upserts keyed on node ID.
 export function incrementalSearch(kind: EventKind, login: string, since: string): string {
   return `${scope(kind, login)} updated:>${since}`;
 }
