@@ -13,12 +13,14 @@
     "wrangler": "wrangler"
   },
   "dependencies": {
+    "hyparquet-writer": "^0.16.9",
     "zod": "^4.5.4"
   },
   "devDependencies": {
     "@ast-grep/cli": "^0.45.3",
     "@cloudflare/vitest-pool-workers": "^0.22.0",
     "@types/bun": "^1.4.2",
+    "hyparquet": "^1.30.0",
     "oxfmt": "0.67.0",
     "oxlint": "1.82.0",
     "typescript": "^7.0.2",
