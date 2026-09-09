@@ -3,8 +3,9 @@
   "private": true,
   "type": "module",
   "scripts": {
-    "typecheck": "tsc --noEmit",
+    "typecheck": "tsc --noEmit && tsc -p scripts --noEmit",
     "lint": "oxlint --report-unused-disable-directives && ast-grep scan",
+    "backfill": "bun scripts/backfill.ts",
     "test": "vitest run",
     "format": "oxfmt .",
     "format:check": "oxfmt --check .",
