@@ -90,17 +90,17 @@ Timestamps land as Parquet `TIMESTAMP_MILLIS` rather than the ISO strings D1 hol
 
 #### Identity
 
-Every event's primary key is the GraphQL node ID GitHub returns, which is stable across renames of the repository and of the owner. `owner`, `name`, and `number` are stored beside it for readability and for joins against the repository dimension.
+Every event's primary key is the GraphQL node ID GitHub returns, which is stable across renames of the repository and of the owner. `number` is stored beside it for readability, and `owner` and `name` come off the repository dimension each event joins to by `repository_id`.
 
 #### Tables
 
-| Table           | Columns                                                                                                                                                                   |
-| --------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `pull_requests` | Node ID, repository, number, title, created at, merged at, closed at, state, additions, deletions, changed files, comment count, review count, base repository visibility |
-| `reviews`       | Node ID, repository, pull request number, state (approved, changes requested, commented), submitted at, pull request author                                               |
-| `issues`        | Node ID, repository, number, title, created at, closed at, state, comment count                                                                                           |
-| `commit_days`   | Repository, day, commit count                                                                                                                                             |
-| `repositories`  | Owner, name, description, url, stargazer count, primary language name and color, created at, fork, visibility                                                             |
+| Table           | Columns                                                                                                                                               |
+| --------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `pull_requests` | Node ID, repository, number, title, author, created at, merged at, closed at, state, additions, deletions, changed files, comment count, review count |
+| `reviews`       | Node ID, repository, pull request number, state (approved, changes requested, commented), submitted at, pull request author                           |
+| `issues`        | Node ID, repository, number, title, created at, closed at, state, comment count                                                                       |
+| `commit_days`   | Repository, day, commit count                                                                                                                         |
+| `repositories`  | Owner, name, description, url, stargazer count, primary language name and color, created at, fork, visibility                                         |
 
 Additions, deletions, changed files, and the comment and review counts come off the pull request node's own fields. They cost nothing beyond the search page that already returned the node, and a record like largest PR falls out of them without opening a single diff.
 
@@ -108,9 +108,11 @@ Additions, deletions, changed files, and the comment and review counts come off 
 
 Commits are per-repository daily counts because that is the finest grain `contributionsCollection` exposes without a query per repository per branch. `commitContributionsByRepository.contributions.nodes[]` carries a `commitCount` and an `occurredAt`, and one year of them is one request.
 
-#### Sync State
+#### Operational Tables
 
 `sync_state` is a key/value table. One key per event type holds the last window normalized successfully, and `updated_at` says when. The watermark advances only after the pages are in R2 and the rows are in D1. A failed run re-reads its window instead of skipping past it.
+
+`sync_runs` holds one row per extraction attempt, written before the work starts so a run that dies mid-flight reads as one that never finished. It carries the kind, the window, page and row counts, whether the window truncated, an error, and a note the contributions cross-check writes when GitHub's yearly total disagrees with the event tables. `lake_builds` is that shape for the nightly build, carrying per-table row counts as JSON. `/admin/sync` reports the newest of each.
 
 ## Extraction
 
@@ -126,11 +128,11 @@ The `search` query returns [a maximum of 1,000 results](https://docs.github.com/
 
 The upper bound is the month's real last day. A literal `-31` against a thirty-day month is a date GitHub's parser has to reinterpret, and these boundaries are what the whole cap mitigation rests on.
 
-Walking those back to 2012 is roughly 150 requests per event type for the whole history. The incremental run is the same code path with a different window: one `updated:>{last successful sync}` query per type. Backfill and incremental differ only in what dates go into the string.
+Walking those back to 2012 is 166 windows per event type for the whole history. The incremental run is the same code path with a different window: one `updated:>{last successful sync}` query per type. Backfill and incremental differ only in what dates go into the string.
 
 #### Contributions Collection
 
-`user.contributionsCollection(from, to)` takes at most a year per request. Its [`to` argument](https://docs.github.com/en/graphql/reference/users#object-user) defaults to the earlier of now and a year past `from`, and a wider window is rejected. A full history is one request per year. `user.contributionsCollection.contributionYears` lists which years to walk.
+`user.contributionsCollection(from, to)` takes at most a year per request. Its [`to` argument](https://docs.github.com/en/graphql/reference/users#object-user) defaults to the earlier of now and a year past `from`. The reference documents that default and says nothing about what a wider window does, so the client never sends one. A full history is one request per year. `user.contributionsCollection.contributionYears` lists which years to walk.
 
 `commitContributionsByRepository` returns a plain list rather than a paginated connection, and its `maxRepositories` argument defaults to 25. Anything past the value it is given is dropped with no error and no cursor to follow. The site's existing query asks for 100 across every one of these fields and warns when a list comes back exactly that long. That shape carries over: a year holding exactly the maximum is treated as truncated the same way a search window holding exactly 1,000 is.
 
@@ -165,7 +167,7 @@ The repository dimension publishes too. The site's `repos` table exists only to 
 
 The site's activity pages and homepage key their ETags on `sync_state.version`, which `recordSync` bumps when a sync changed rows. Whatever the publish path writes has to bump that same version or those pages serve stale ETags against fresh data. `src/middleware.ts` and `src/middleware/cache.ts` read it.
 
-#### What the Site Retires
+#### Site Retirements
 
 Once the hub publishes, running both syncs means two writers disagreeing about the same page. These go:
 
@@ -208,7 +210,7 @@ For sizing: the site's current tables report 62 repositories touched in 2026, wi
 - Migrations apply by hand with `wrangler d1 migrations apply code-hub --remote`. Moving them into CI on merge to `main` waits on the deploy job, and matches how the site and Activity Hub both work.
 - An admin route reports the last successful sync per event type, the lag on the oldest window still unread, recent failures, and the last lake build, in the shape of Activity Hub's `/admin/pipeline`.
 - The `contributionsCollection` totals are checked against event table counts per year. Drift is the signal that a window truncated, and there is no other way to notice a silent 1,000-result cap.
-- The backfill is roughly 500 search requests plus one per contribution year. That sits inside the 1,000 subrequests a paid Workers invocation gets and an order of magnitude past the free tier's 50, so paging it across invocations is a platform constraint before it is a wall clock one.
+- The backfill is roughly 500 search requests plus one per contribution year, well inside the 10,000 subrequests a paid Workers invocation gets. Paging it across invocations answers the wall clock rather than a platform ceiling. The free tier's 50 subrequests would bind first.
 - Backoff reads `rateLimit` off each response rather than waiting for a 403. The existing `rateLimitBackoff` in the site's `scripts/backfill-github-activity.ts` is the shape to follow.
 
 ## Risks
@@ -233,7 +235,7 @@ The token sees private repositories. A feed row counting a private pull request 
 - Filter at publish. The hub stores everything and sends only public rows. The lake stays complete for private analysis, and the site cannot show private counts even as an anonymous number.
 - Publish counted but unnamed. Private events reach the site with the repository redacted, so totals are complete and no private name appears. The site then needs a render path for a row with no repository to link to.
 
-#### Which Searches Define Involvement
+#### Involvement Queries
 
 `author:` alone undercounts reviews and co-authored work. `involves:` overcounts drive-by mentions. The site's current sync splits the difference, using `involves:` for issues and `is:pr is:merged user:bendrucker -author:bendrucker` for merged pull requests into my own repositories, which counts work other people did that I merged. The set to pick from:
 
@@ -243,7 +245,7 @@ The token sees private repositories. A feed row counting a private pull request 
 
 Whichever set wins gets documented here, because a homepage number is uninterpretable without knowing which query produced it. It interacts with the visibility decision above: a wider involvement set pulls in more repositories, and more repositories means more of them private.
 
-#### Whether to Lift `packages/github`
+#### Reusing `packages/github`
 
 - Lift it. The zod schemas, the `nodes()` helper, and the paginated search wrapper exist and are tested, and the `contributionsCollection` query is already written.
 - Write a new client. The package is shaped around per-repository aggregation, which is exactly what this project replaces, and every one of its search queries pulls the full repository fragment onto each node.

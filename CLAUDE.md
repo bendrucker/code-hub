@@ -20,9 +20,9 @@ Cloudflare Workers (TypeScript), Bun, Wrangler. Storage: D1 (`DB`), R2 (`RAW` fo
 
 ## Deploy
 
-CI runs on every PR and on push to `main` (`.github/workflows/ci.yml`): typecheck, test, lint, format check, and a check that `worker-configuration.d.ts` is current.
+CI runs on every PR and on push to `main` (`.github/workflows/ci.yml`): typecheck, test, lint, format check, a check that `worker-configuration.d.ts` is current, and the `.pre-commit-config.yaml` hooks under `prek`. Those hooks also run locally on every commit, and one of them refuses a commit on `main`.
 
-Deploys are not wired up. The repository has no `CLOUDFLARE_API_TOKEN` secret, so there is no deploy job yet. Adding one means copying activity-hub's: apply D1 migrations, then `wrangler deploy`, gated on `check` and on push to `main`. Until then, migrations in `migrations/` apply by hand with `wrangler d1 migrations apply code-hub --remote`.
+Deploys are not wired up. The repository has no `CLOUDFLARE_API_TOKEN` secret, so there is no deploy job yet. Adding one means copying activity-hub's: apply D1 migrations, then `wrangler deploy`, gated on `check` and on push to `main`. Until then, migrations in `migrations/` apply by hand with `bun run wrangler d1 migrations apply code-hub --remote`, which writes to the live database.
 
 ## Cloudflare Configuration
 

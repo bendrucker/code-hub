@@ -12,10 +12,10 @@
     // Public identifier rather than a secret. The token that reads GitHub is a
     // Worker secret. Whose history it reads is not.
     "GITHUB_LOGIN": "bendrucker",
-    // Months a single POST /admin/backfill call walks. A paid invocation gets
-    // 1,000 subrequests and the free tier 50, and each window is a search page
-    // plus its R2 write and its D1 writes, so the walk is paged across calls
-    // before the wall clock is the constraint.
+    // Months a single POST /admin/backfill call walks. Each window is a search
+    // page plus its R2 write and its D1 writes, far short of the 10,000
+    // subrequests a paid invocation gets. The walk is paged to stay inside the
+    // wall clock rather than a platform ceiling.
     "BACKFILL_WINDOWS": 12,
   },
   "triggers": {
