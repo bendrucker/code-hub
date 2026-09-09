@@ -17,9 +17,7 @@
     {
       "binding": "DB",
       "database_name": "code-hub",
-      // Placeholder until `wrangler d1 create code-hub` runs against the
-      // account. Tests read migrations/ directly and never resolve this id.
-      "database_id": "00000000-0000-0000-0000-000000000000",
+      "database_id": "6d2d6371-265e-41d9-a075-247a7bc68859",
       "migrations_dir": "migrations",
     },
   ],
