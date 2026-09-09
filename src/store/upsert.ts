@@ -38,8 +38,7 @@ export function upsertSql(spec: UpsertSpec): string {
   ].join(" ");
 }
 
-// Answers how many rows the write actually changed, which is what a caller
-// needs to know whether a page of search results carried anything new.
+// Answers how many rows the write actually changed.
 export async function upsertRows<Row>(
   db: D1Database,
   sql: string,
