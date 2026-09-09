@@ -6,6 +6,8 @@ System of record for GitHub contribution data: pull requests, reviews, issues, a
 
 Cloudflare Workers (TypeScript), Bun, Wrangler. Storage: D1 (`DB`), R2 (`RAW` for API responses, `LAKE` for Parquet output). `LAKE` is activity-hub's bucket, written under a `github/` prefix so one DuckDB session can join rides against pull requests. Two cron triggers drive the Worker: an hourly sync and a nightly lake build. Config lives in `wrangler.jsonc`.
 
+`src/index.ts` exports the default handler and nothing else. workerd reads every named export of the entrypoint as a handler and refuses a string. Neither the test suite nor CI catches that, so `bun run dev` is what surfaces it. A constant the handler needs lives in the module it describes.
+
 ## Commands
 
 - `bun run typecheck`: `tsc --noEmit` over `src/` and `test/`
@@ -19,8 +21,6 @@ Cloudflare Workers (TypeScript), Bun, Wrangler. Storage: D1 (`DB`), R2 (`RAW` fo
 ## Deploy
 
 CI runs on every PR and on push to `main` (`.github/workflows/ci.yml`): typecheck, test, lint, format check, and a check that `worker-configuration.d.ts` is current.
-
-`src/index.ts` exports the default handler and nothing else. workerd reads every named export of the entrypoint as a handler and refuses a string, and neither the test suite nor CI catches that: `bun run dev` is what surfaces it. A constant the handler needs lives in the module it describes.
 
 Deploys are not wired up. The repository has no `CLOUDFLARE_API_TOKEN` secret, so there is no deploy job yet. Adding one means copying activity-hub's: apply D1 migrations, then `wrangler deploy`, gated on `check` and on push to `main`. Until then, migrations in `migrations/` apply by hand with `wrangler d1 migrations apply code-hub --remote`.
 
@@ -49,6 +49,4 @@ Worker secrets are set with `wrangler secret put`, never committed. `wrangler de
 
 ## Lake
 
-The nightly cron rebuilds every lake table from D1 into Snappy Parquet under `github/v1/` in `activity-hub-lake`. `scheduled` picks the build over the sync by matching `controller.cron` against `LAKE_CRON` in `src/index.ts`, which a test holds against the triggers `wrangler.jsonc` configures. A cron expression that changes in one place and not the other leaves the lake unbuilt and reports nothing.
-
-Every table encodes before any is written, so a failure leaves the bucket on the last complete build. `lake_builds` records the row counts or the error, and `GET /admin/sync` reports the most recent one. `POST /admin/lake` runs the same build for a schema change that should not wait for the next night.
+`scheduled` picks the nightly build over the sync by matching `controller.cron` against `LAKE_CRON` in `src/lake/build.ts`, which a test holds against the triggers `wrangler.jsonc` configures. An expression that changes in one place and not the other leaves the lake unbuilt and reports nothing. The [README](README.md#lake) covers what the build guarantees and how to run it by hand.
