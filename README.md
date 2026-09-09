@@ -106,8 +106,11 @@ There is no Terraform here. Activity Hub needs it for a DNS record, a Workers ro
 
 ```sh
 bun install
+cp .dev.vars.example .dev.vars
 bun run dev
 ```
+
+`wrangler dev` reads `GITHUB_TOKEN` and `ADMIN_TOKEN` from `.dev.vars`, which is gitignored. A run with both left empty serves `/healthz` and answers the admin routes 404.
 
 | Command             | What it does                                   |
 | ------------------- | ---------------------------------------------- |
@@ -117,6 +120,7 @@ bun run dev
 | `bun run lint`      | Lints                                          |
 | `bun run format`    | Formats                                        |
 | `bun run types`     | Regenerates Worker types from `wrangler.jsonc` |
+| `bun run backfill`  | Walks `POST /admin/backfill` to completion     |
 
 ## Status
 

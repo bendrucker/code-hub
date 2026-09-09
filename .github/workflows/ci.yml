@@ -27,7 +27,44 @@ jobs:
       - name: worker-configuration.d.ts is current
         run: |
           git diff --exit-code -- worker-configuration.d.ts \
-            || { echo '::error::run `bun run types` and commit the result'; exit 1; }
+            || { echo "::error::run 'bun run types' and commit the result"; exit 1; }
       - uses: j178/prek-action@v3.0.0
         env:
           SKIP: no-commit-to-branch
+
+  deploy:
+    needs: [check]
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    concurrency:
+      group: deploy
+    # activity-hub's deploy job assumes the token exists. This repository has
+    # no CLOUDFLARE_API_TOKEN yet, and a deploy job that fails without one
+    # turns every merge to main red for a reason nobody can fix in a commit.
+    # The first step reads the secret and skips the rest of the job when it is
+    # empty. Setting the secret is the only change this workflow needs to
+    # start deploying.
+    env:
+      CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+    steps:
+      - id: secret
+        name: Check for CLOUDFLARE_API_TOKEN
+        run: |
+          if [ -n "$CLOUDFLARE_API_TOKEN" ]; then
+            echo 'present=true' >> "$GITHUB_OUTPUT"
+          else
+            echo 'present=false' >> "$GITHUB_OUTPUT"
+            echo '::notice::CLOUDFLARE_API_TOKEN is unset, skipping the deploy'
+          fi
+      - if: steps.secret.outputs.present == 'true'
+        uses: actions/checkout@v7
+      - if: steps.secret.outputs.present == 'true'
+        uses: oven-sh/setup-bun@v2
+      - if: steps.secret.outputs.present == 'true'
+        run: bun install --frozen-lockfile
+      - if: steps.secret.outputs.present == 'true'
+        name: Apply D1 migrations
+        run: bun run wrangler d1 migrations apply code-hub --remote
+      - if: steps.secret.outputs.present == 'true'
+        name: Deploy worker
+        run: bun run wrangler deploy
