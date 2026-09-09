@@ -8,6 +8,7 @@ import {
   searchPayload,
 } from "../../test/github-fixtures";
 import { backfill, InvalidMonthError, parseMonth } from "./backfill";
+import { readWatermark } from "./state";
 
 // Far enough past the 2012-12 start that a single call cannot reach it, so the
 // resume point is a real month rather than the end of the walk.
@@ -83,6 +84,19 @@ describe("backfill", () => {
       "2014-06",
     ]);
     expect(result.next).toBeNull();
+  });
+
+  it("leaves the in-progress month's watermark at the present, not at the month's end", async () => {
+    const { fetch } = stubGitHub(() => jsonResponse(searchPayload([])));
+
+    await backfill(env, "issue", { year: 2014, month: 6 }, { fetch, now: NOW });
+
+    // 2014-06-30 has not happened yet. A watermark there outranks every later
+    // advance the monotonic guard sees, so the hourly sync would go quiet for
+    // the rest of the month.
+    expect(await readWatermark(env.DB, "issue")).toMatchObject({
+      window: NOW.toISOString(),
+    });
   });
 
   it("walks the years the collection reports rather than a range of its own", async () => {

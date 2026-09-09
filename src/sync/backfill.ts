@@ -3,6 +3,7 @@ import type { SyncKind } from "./kinds";
 import {
   githubToken,
   syncContributions,
+  syncedThrough,
   type SyncOptions,
   type SyncResult,
   syncWindow,
@@ -84,9 +85,9 @@ async function backfillSearchWindows(
         key: window.key,
         query: backfillSearch(kind, env.GITHUB_LOGIN, window),
         // A `created:` window says nothing about events updated after it
-        // closed, so it leaves the watermark at the month's end and the
+        // closed. It leaves the watermark at the month's end and the
         // incremental sync picks up whatever moved since.
-        through: `${window.end}T23:59:59.999Z`,
+        through: syncedThrough(`${window.end}T23:59:59.999Z`, now),
       },
       options,
     );
@@ -122,7 +123,7 @@ async function backfillContributions(
     return { ...result, next: resume(from) };
   }
 
-  const years = first.contributionYears.filter((year) => year > from).toSorted();
+  const years = first.contributionYears.filter((year) => year > from).toSorted((a, b) => a - b);
   const remaining = years.slice(0, env.BACKFILL_WINDOWS - 1);
   let year = remaining.shift();
   while (year !== undefined) {

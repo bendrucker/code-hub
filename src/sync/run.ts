@@ -92,6 +92,10 @@ export async function syncWindow(
       // eslint-disable-next-line no-await-in-loop
       page = await pages.next();
     }
+
+    // Inside the run so a watermark that fails to move is the run's error
+    // rather than an exception out of the cron.
+    await advance(env.DB, kind, window.through);
   } catch (error) {
     result = { ...result, error: describe(error) };
     exhausted = error instanceof RateLimitExhausted;
@@ -100,15 +104,11 @@ export async function syncWindow(
     await finishRun(env.DB, id, result);
   }
 
-  if (result.error === null) {
-    await advance(env.DB, kind, window.through);
-  }
-
   return { ...result, exhausted };
 }
 
 export interface ContributionsRun extends SyncResult {
-  // The years GitHub reports holding contributions for. A backfill walks these years directly.
+  // The years GitHub reports holding contributions for.
   contributionYears: number[];
 }
 
@@ -139,8 +139,9 @@ export async function syncContributions(
       rowsChanged: total(changed),
       truncated: contributionsTruncated(fetched.collection),
       error: null,
-      note: await crossCheck(env.DB, year, fetched.collection),
+      note: await note(env.DB, year, fetched.collection),
     };
+    await advance(env.DB, "contributions", syncedThrough(yearEnd(year), now));
   } catch (error) {
     result = { ...result, error: describe(error) };
     exhausted = error instanceof RateLimitExhausted;
@@ -151,19 +152,36 @@ export async function syncContributions(
     await finishRun(env.DB, id, result);
   }
 
-  if (result.error === null) {
-    await advance(env.DB, "contributions", syncedThrough(year, now));
-  }
-
   return { ...result, exhausted, contributionYears: collection?.contributionYears ?? [] };
 }
 
-// The collection takes at most a year per request, so a past year is synced
-// through its own last instant while the current one reaches only as far as the
-// moment it was read.
-function syncedThrough(year: number, now: Date): string {
-  const yearEnd = new Date(Date.UTC(year, 11, 31, 23, 59, 59));
-  return (now < yearEnd ? now : yearEnd).toISOString();
+// The cross-check reports on a run whose pages are already in R2 and whose rows
+// are already in D1, so a failure to compute it is something to read rather
+// than the run's error.
+async function note(
+  db: D1Database,
+  year: number,
+  collection: ContributionsCollection,
+): Promise<string | null> {
+  try {
+    return await crossCheck(db, year, collection);
+  } catch (error) {
+    return `${year} cross-check failed: ${describe(error)}`;
+  }
+}
+
+// A window still in progress closes in the future. The watermark takes the
+// earlier instant, because a future one outranks every later advance the
+// monotonic guard sees and freezes the kind until the calendar catches up.
+export function syncedThrough(end: string, now: Date): string {
+  const at = now.toISOString();
+  return end < at ? end : at;
+}
+
+// The collection takes at most a year per request, so a year is synced no
+// further than its own last instant.
+function yearEnd(year: number): string {
+  return new Date(Date.UTC(year, 11, 31, 23, 59, 59)).toISOString();
 }
 
 interface Page {

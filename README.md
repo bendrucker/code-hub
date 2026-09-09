@@ -62,7 +62,7 @@ A sync state table alongside these records the last window read per event type. 
 
 The hourly cron runs one `updated:>` search per event kind plus `contributionsCollection` for the current year. Each search window opens an hour behind that kind's watermark, since GitHub's search index lags writes and upserts keyed on node ID make the overlap free. Kinds run one after another so the first to reach the rate-limit floor ends the invocation.
 
-A watermark is an ISO instant meaning synced through. It advances only after every page is in R2 and every row is in D1, and only forward, so a backfill of an old month cannot rewind a caught-up kind. A kind with no watermark is skipped: a backfill sets the first one.
+A watermark is an ISO instant meaning synced through. It advances only after every page is in R2 and every row is in D1, and only forward. A backfill of an old month cannot rewind a caught-up kind. A kind with no watermark is skipped: a backfill sets the first one.
 
 Backfill runs from an admin route against the same code path, paged so no invocation runs past its subrequest budget:
 

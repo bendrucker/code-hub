@@ -1,5 +1,5 @@
 import { type EventKind, incrementalSearch } from "../github/windows";
-import { SEARCH_KINDS } from "./kinds";
+import { SEARCH_KINDS, type SyncKind } from "./kinds";
 import {
   githubToken,
   MissingSecretError,
@@ -37,19 +37,37 @@ export async function syncIncremental(env: Env, options: SyncOptions = {}): Prom
   let kind = remaining.shift();
   while (kind !== undefined) {
     // eslint-disable-next-line no-await-in-loop
-    const result = await syncKind(env, kind, { ...options, now });
+    const result = await contained(kind, syncKind(env, kind, now, options));
     if (result?.exhausted === true) {
       return;
     }
     kind = remaining.shift();
   }
 
-  await syncContributions(env, now.getUTCFullYear(), { ...options, now });
+  await contained(
+    "contributions",
+    syncContributions(env, now.getUTCFullYear(), { ...options, now }),
+  );
+}
+
+// One kind's storage failure is not the other kinds' problem, and a throw here
+// would end the invocation before they ran.
+async function contained(
+  kind: SyncKind,
+  run: Promise<SyncResult | null>,
+): Promise<SyncResult | null> {
+  try {
+    return await run;
+  } catch (error) {
+    console.error(`${kind} sync failed: ${String(error)}`);
+    return null;
+  }
 }
 
 async function syncKind(
   env: Env,
   kind: EventKind,
+  now: Date,
   options: SyncOptions,
 ): Promise<SyncResult | null> {
   const watermark = await readWatermark(env.DB, kind);
@@ -68,8 +86,8 @@ async function syncKind(
     {
       key: `updated:${since}`,
       query: incrementalSearch(kind, env.GITHUB_LOGIN, since),
-      through: (options.now ?? new Date()).toISOString(),
+      through: now.toISOString(),
     },
-    options,
+    { ...options, now },
   );
 }

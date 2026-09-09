@@ -28,9 +28,9 @@ Change Cloudflare resources (R2 buckets, D1 databases, cron triggers, secrets) t
 
 ## Sync
 
-The hourly cron runs one `updated:>` search per event kind plus `contributionsCollection` for the current year. Each search window opens an hour behind that kind's watermark, which covers the lag between a write on GitHub and its appearance in the search index. Kinds run one after another, so the first to reach the rate-limit floor ends the invocation instead of the other two spending their way to the same discovery.
+The hourly cron runs one `updated:>` search per event kind plus `contributionsCollection` for the current year. Each search window opens an hour behind that kind's watermark, which covers the lag between a write on GitHub and its appearance in the search index. Kinds run one after another. The first to reach the rate-limit floor ends the invocation instead of the other two spending their way to the same discovery.
 
-A watermark is an ISO instant meaning synced through, and it moves only after every page is in R2 and every row is in D1. It moves forward only, so a backfill of 2013 cannot rewind a caught-up kind. A kind with no watermark is skipped, because anchoring at now would declare the whole history synced.
+A watermark is an ISO instant meaning synced through, and it moves only after every page is in R2 and every row is in D1. It moves forward only. A backfill of 2013 cannot rewind a caught-up kind. A kind with no watermark is skipped, because anchoring at now would declare the whole history synced.
 
 Backfill sets the first watermark and fills what the cron never saw:
 

@@ -1,4 +1,4 @@
-import type { Month } from "./github/windows";
+import { monthWindow } from "./github/windows";
 import {
   backfill,
   BACKFILL_START,
@@ -66,7 +66,7 @@ export async function handleBackfill(request: Request, env: Env): Promise<Respon
   }
 
   try {
-    const from = parseMonth(url.searchParams.get("from") ?? month(BACKFILL_START));
+    const from = parseMonth(url.searchParams.get("from") ?? monthWindow(BACKFILL_START).key);
     const result: BackfillResult = await backfill(env, kind, from);
     return Response.json(result);
   } catch (error) {
@@ -78,10 +78,6 @@ export async function handleBackfill(request: Request, env: Env): Promise<Respon
     }
     return Response.json({ error: String(error) }, { status: 500 });
   }
-}
-
-function month({ year, month: value }: Month): string {
-  return `${year}-${String(value).padStart(2, "0")}`;
 }
 
 function isSyncKind(value: string | null): value is SyncKind {
