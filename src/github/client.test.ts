@@ -6,6 +6,7 @@ import {
   GitHubHttpError,
   GraphQLQueryError,
   RateLimitExhausted,
+  ResponseValidationError,
   type GraphQLOptions,
 } from "./client";
 
@@ -115,6 +116,73 @@ describe("graphql", () => {
   it("rejects a response that selected no rate limit", async () => {
     const stub = stubFetch(() => jsonResponse({ data: { search: {} } }));
 
-    await expect(graphql("t0ken", "query Q { x }", {}, options(stub.fetch))).rejects.toThrow();
+    await expect(graphql("t0ken", "query Q { x }", {}, options(stub.fetch))).rejects.toThrow(
+      ResponseValidationError,
+    );
+  });
+
+  it("keeps the body reachable when a 200 carries no JSON at all", async () => {
+    const stub = stubFetch(() => new Response("<html>maintenance</html>", { status: 200 }));
+
+    const error = await graphql("t0ken", "query Q { x }", {}, options(stub.fetch)).catch(
+      (thrown: unknown) => thrown,
+    );
+
+    expect(error).toBeInstanceOf(ResponseValidationError);
+    expect(error).toMatchObject({ body: "<html>maintenance</html>" });
+  });
+
+  it("keeps the body reachable when the schema rejects the response", async () => {
+    const body = JSON.stringify({ data: { rateLimit: { cost: "free" } } });
+    const stub = stubFetch(() => new Response(body, { status: 200 }));
+
+    const error = await graphql("t0ken", "query Q { x }", {}, options(stub.fetch)).catch(
+      (thrown: unknown) => thrown,
+    );
+
+    expect(error).toBeInstanceOf(ResponseValidationError);
+    expect(error).toMatchObject({ body });
+  });
+
+  it("carries the body and the reported budget out of a partial failure", async () => {
+    const stub = stubFetch(() =>
+      jsonResponse({
+        data: { search: {}, rateLimit: rateLimit({ remaining: 4200 }) },
+        errors: [{ message: "Something went wrong" }],
+      }),
+    );
+
+    const error = await graphql("t0ken", "query Q { x }", {}, options(stub.fetch)).catch(
+      (thrown: unknown) => thrown,
+    );
+
+    expect(error).toBeInstanceOf(GraphQLQueryError);
+    expect(error).toMatchObject({ rateLimit: { remaining: 4200 } });
+    expect(error).toHaveProperty("body", expect.stringContaining("Something went wrong"));
+  });
+
+  it("carries the body out of a rate limit stop so the page can still be archived", async () => {
+    const body = JSON.stringify({ data: { rateLimit: rateLimit({ remaining: 4 }) } });
+    const stub = stubFetch(() => new Response(body, { status: 200 }));
+
+    const error = await graphql(
+      "t0ken",
+      "query Q { x }",
+      {},
+      { ...options(stub.fetch), floor: 10 },
+    ).catch((thrown: unknown) => thrown);
+
+    expect(error).toBeInstanceOf(RateLimitExhausted);
+    expect(error).toMatchObject({ body });
+  });
+
+  it("names each error class so a caller can branch on it across the RPC boundary", async () => {
+    const stub = stubFetch(() => new Response("nope", { status: 500 }));
+
+    const error = await graphql("t0ken", "query Q { x }", {}, options(stub.fetch)).catch(
+      (thrown: unknown) => thrown,
+    );
+
+    expect(error).toMatchObject({ name: "GitHubHttpError" });
   });
 });

@@ -1,20 +1,14 @@
-import { graphql, type GraphQLOptions } from "./client";
-import { CONTRIBUTIONS } from "./queries";
+import { GitHubResponseError, graphql, validate, type GraphQLOptions } from "./client";
+import { CONTRIBUTIONS, MAX_REPOSITORIES, NESTED_PAGE_SIZE } from "./queries";
 import { contributionsResponse, type ContributionsCollection, type RateLimit } from "./schema";
 
-// `commitContributionsByRepository` is a plain list rather than a connection:
-// anything past `maxRepositories` is dropped with no error and no cursor to
-// follow. A year coming back at exactly the maximum has probably lost
-// repositories, and `totalRepositoriesWithContributedCommits` off the same
-// response is the count to check it against.
-export const MAX_REPOSITORIES = 100;
+export { MAX_REPOSITORIES } from "./queries";
 
-export class UnknownUserError extends Error {
+export class UnknownUserError extends GitHubResponseError {
   readonly login: string;
 
-  constructor(login: string) {
-    super(`GitHub has no user ${login}`);
-    this.name = "UnknownUserError";
+  constructor(login: string, body: string) {
+    super("UnknownUserError", `GitHub has no user ${login}`, body);
     this.login = login;
   }
 }
@@ -31,15 +25,18 @@ export interface ContributionsResult {
   body: string;
 }
 
-// Two fixed lists with no cursor between them. The repository list is checked
-// against the maximum it was given, and each repository's daily contributions
-// against the total the same response reports, since a repository committed to
-// on more than a page of days in one year returns only the first page.
+// Two fixed lists with no cursor between them: anything past the limit each was
+// given is dropped with no error and nothing to follow. The repository list is
+// checked against that limit, and each repository's daily contributions against
+// the total the same response reports, since a repository committed to on more
+// than a page of days in one year returns only the first page.
+// `totalRepositoriesWithContributedCommits` is the count to cross-check the
+// first against.
 function truncated(collection: ContributionsCollection): boolean {
   return (
     collection.commitContributionsByRepository.length >= MAX_REPOSITORIES ||
     collection.commitContributionsByRepository.some(
-      ({ contributions }) => contributions.nodes.length < contributions.totalCount,
+      ({ contributions }) => contributions.totalCount > NESTED_PAGE_SIZE,
     )
   );
 }
@@ -68,9 +65,9 @@ export async function fetchContributions(
     options,
   );
 
-  const { user } = contributionsResponse.parse(response.data);
+  const { user } = validate(contributionsResponse, response.data, response.body);
   if (!user) {
-    throw new UnknownUserError(login);
+    throw new UnknownUserError(login, response.body);
   }
 
   const collection = user.contributionsCollection;

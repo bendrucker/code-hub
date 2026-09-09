@@ -2,6 +2,11 @@
 // remaining budget off whatever response it just took.
 const gql = (strings: TemplateStringsArray) => strings.raw.join("");
 
+// Baked into the documents below rather than passed as variables, so the checks
+// that detect a list arriving full read the same number the query asked for.
+export const MAX_REPOSITORIES = 100;
+export const NESTED_PAGE_SIZE = 100;
+
 const REPOSITORY_FRAGMENT = gql`
   fragment RepositoryInfo on Repository {
     id
@@ -22,6 +27,13 @@ const REPOSITORY_FRAGMENT = gql`
   }
 `;
 
+const PAGE_INFO = gql`
+  pageInfo {
+    hasNextPage
+    endCursor
+  }
+`;
+
 const RATE_LIMIT = gql`
   rateLimit {
     cost
@@ -36,10 +48,7 @@ export const PULL_REQUEST_SEARCH = `
   query PullRequestSearch($searchQuery: String!, $first: Int!, $after: String) {
     search(query: $searchQuery, type: ISSUE, first: $first, after: $after) {
       issueCount
-      pageInfo {
-        hasNextPage
-        endCursor
-      }
+      ${PAGE_INFO}
       nodes {
         __typename
         ... on PullRequest {
@@ -87,10 +96,7 @@ export const REVIEWED_PULL_REQUEST_SEARCH = `
   ) {
     search(query: $searchQuery, type: ISSUE, first: $first, after: $after) {
       issueCount
-      pageInfo {
-        hasNextPage
-        endCursor
-      }
+      ${PAGE_INFO}
       nodes {
         __typename
         ... on PullRequest {
@@ -101,7 +107,7 @@ export const REVIEWED_PULL_REQUEST_SEARCH = `
             login
           }
           updatedAt
-          reviews(author: $login, first: 100) {
+          reviews(author: $login, first: ${NESTED_PAGE_SIZE}) {
             totalCount
             nodes {
               id
@@ -126,10 +132,7 @@ export const ISSUE_SEARCH = `
   query IssueSearch($searchQuery: String!, $first: Int!, $after: String) {
     search(query: $searchQuery, type: ISSUE, first: $first, after: $after) {
       issueCount
-      pageInfo {
-        hasNextPage
-        endCursor
-      }
+      ${PAGE_INFO}
       nodes {
         __typename
         ... on Issue {
@@ -170,11 +173,11 @@ export const CONTRIBUTIONS = `
         totalRepositoriesWithContributedCommits
         restrictedContributionsCount
         contributionYears
-        commitContributionsByRepository(maxRepositories: 100) {
+        commitContributionsByRepository(maxRepositories: ${MAX_REPOSITORIES}) {
           repository {
             ...RepositoryInfo
           }
-          contributions(first: 100) {
+          contributions(first: ${NESTED_PAGE_SIZE}) {
             totalCount
             nodes {
               commitCount

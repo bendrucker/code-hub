@@ -7,19 +7,22 @@ import {
   requestBody,
   searchResponse,
 } from "../../test/github-fixtures";
-import { RateLimitExhausted } from "./client";
-import { PULL_REQUEST_SEARCH } from "./queries";
-import { pullRequestSearchPage, type PullRequestNode } from "./schema";
-import { searchPages, type SearchPageResult } from "./search";
+import { RateLimitExhausted, ResponseValidationError } from "./client";
+import { type PullRequestNode } from "./schema";
+import {
+  pullRequestPages,
+  reviewedPullRequestPages,
+  SEARCH_MAX_RESULTS,
+  SEARCH_PAGE_SIZE,
+  type SearchPageResult,
+} from "./search";
 
 const ENDPOINT = "https://api.github.test/graphql";
 
 function pages(stub: FetchStub, floor?: number) {
-  return searchPages<PullRequestNode>({
+  return pullRequestPages({
     token: "t0ken",
-    document: PULL_REQUEST_SEARCH,
     searchQuery: "is:pr author:bendrucker created:2026-08-01..2026-08-31",
-    schema: pullRequestSearchPage,
     fetch: stub.fetch,
     endpoint: ENDPOINT,
     floor,
@@ -133,5 +136,50 @@ describe("searchPages", () => {
     const error = await iterator.next().catch((thrown: unknown) => thrown);
     expect(error).toBeInstanceOf(RateLimitExhausted);
     expect(error).toMatchObject({ remaining: 4, resetAt: "2026-09-09T12:00:00Z" });
+  });
+});
+
+describe("search entry points", () => {
+  it("sends the login the reviewed-by document declares", async () => {
+    const stub = stubFetch(() => searchResponse([]));
+
+    const iterator = reviewedPullRequestPages({
+      token: "t0ken",
+      searchQuery: "is:pr reviewed-by:bendrucker created:2026-08-01..2026-08-31",
+      login: "bendrucker",
+      fetch: stub.fetch,
+      endpoint: ENDPOINT,
+    });
+    await iterator.next();
+
+    await expect(requestBody(stub.requests[0]!)).resolves.toMatchObject({
+      variables: { login: "bendrucker" },
+    });
+  });
+
+  it("stops at the result cap rather than following a cursor GitHub will reject", async () => {
+    const stub = stubFetch(() =>
+      searchResponse([pullRequest(1)], { issueCount: SEARCH_MAX_RESULTS, endCursor: "Y3Vy" }),
+    );
+
+    const results = await collect(pages(stub));
+
+    expect(results).toHaveLength(SEARCH_MAX_RESULTS / SEARCH_PAGE_SIZE);
+    expect(results.at(-1)?.truncated).toBe(true);
+  });
+
+  it("keeps the raw body reachable when the page fails to validate", async () => {
+    const body = JSON.stringify({
+      data: {
+        search: { issueCount: 1, pageInfo: { hasNextPage: false }, nodes: [{ __typename: 42 }] },
+        rateLimit: rateLimit(),
+      },
+    });
+    const stub = stubFetch(() => new Response(body, { status: 200 }));
+
+    const error = await collect(pages(stub)).catch((thrown: unknown) => thrown);
+
+    expect(error).toBeInstanceOf(ResponseValidationError);
+    expect(error).toMatchObject({ body });
   });
 });
