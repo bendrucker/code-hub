@@ -4,17 +4,46 @@ import type { EventKind } from "./windows";
 // pages in the order they were read.
 const PAGE_DIGITS = 4;
 
+export const OBJECT_SUFFIX = ".json";
+
+// Replay lists these prefixes to find what a window archived, so the layout has
+// one definition here rather than a listing that has to match a key builder.
+export function searchPrefix(kind: EventKind, window: string): string {
+  return `raw/search/${kind}/${window}/`;
+}
+
+function searchFetchPrefix(kind: EventKind, window: string, fetchedAt: string): string {
+  return `${searchPrefix(kind, window)}${fetchedAt}/`;
+}
+
 export function searchKey(
   kind: EventKind,
   window: string,
   fetchedAt: string,
   page: number,
 ): string {
-  return `raw/search/${kind}/${window}/${fetchedAt}/${String(page).padStart(PAGE_DIGITS, "0")}.json`;
+  const name = String(page).padStart(PAGE_DIGITS, "0");
+  return `${searchFetchPrefix(kind, window, fetchedAt)}${name}${OBJECT_SUFFIX}`;
+}
+
+// Replay counts a fetch's pages against the highest one it archived, so the
+// number `searchKey` padded has to read back off a listed key.
+export function searchPageNumber(key: string): number | null {
+  if (!key.endsWith(OBJECT_SUFFIX)) {
+    return null;
+  }
+
+  const name = key.slice(key.lastIndexOf("/") + 1, -OBJECT_SUFFIX.length);
+
+  return /^\d+$/.test(name) ? Number(name) : null;
+}
+
+export function contributionsPrefix(year: number): string {
+  return `raw/contributions/${year}/`;
 }
 
 export function contributionsKey(year: number, fetchedAt: string): string {
-  return `raw/contributions/${year}/${fetchedAt}.json`;
+  return `${contributionsPrefix(year)}${fetchedAt}${OBJECT_SUFFIX}`;
 }
 
 // Re-running a window writes new pages under a new fetch timestamp rather
