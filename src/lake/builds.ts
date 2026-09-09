@@ -11,16 +11,12 @@ export interface LakeBuild {
 const rowCounts = z.record(z.string(), z.number());
 
 export async function startBuild(db: D1Database, at: string): Promise<number> {
-  const row = await db
-    .prepare("INSERT INTO lake_builds (started_at) VALUES (?) RETURNING id")
+  const { meta } = await db
+    .prepare("INSERT INTO lake_builds (started_at) VALUES (?)")
     .bind(at)
-    .first<{ id: number }>();
+    .run();
 
-  if (row === null) {
-    throw new Error("lake_builds accepted the row without returning its id");
-  }
-
-  return row.id;
+  return meta.last_row_id;
 }
 
 export async function finishBuild(

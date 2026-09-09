@@ -1,7 +1,8 @@
 import { env } from "cloudflare:test";
 import { beforeEach, describe, expect, it } from "vitest";
 import { commitDay, issue, pullRequest, review, seedRepository } from "../../test/fixtures";
-import { emptyBucket, parquetRows, readLakeObject, readParquet } from "../../test/parquet";
+import { parquetRows, readParquet } from "../../test/parquet";
+import { emptyBucket, readObject } from "../../test/r2";
 import { upsertCommitDays, upsertIssues, upsertPullRequests, upsertReviews } from "../store";
 import { buildLake, LAKE_TABLES, tableKey } from "./build";
 import { readLatestBuild } from "./builds";
@@ -23,7 +24,7 @@ async function seed(): Promise<void> {
 }
 
 async function rowsOf(table: LakeTable): Promise<Record<string, unknown>[]> {
-  const buffer = await readLakeObject(env.LAKE, tableKey(table));
+  const buffer = await readObject(env.LAKE, tableKey(table));
   expect(buffer, `${table.name} was not written`).not.toBeNull();
 
   return readParquet(buffer ?? new ArrayBuffer(0));
@@ -59,13 +60,11 @@ describe("buildLake", () => {
     expect(built.startedAt).toBe(STARTED_AT);
   });
 
-  it("writes a repository row that reads back as D1 holds it", async () => {
-    await seed();
-
-    await buildLake(env, STARTED_AT);
-
-    expect(await rowsOf(repositories)).toEqual([
-      {
+  it.each<{ name: string; table: LakeTable; expected: Record<string, unknown> }>([
+    {
+      name: "a repository",
+      table: repositories,
+      expected: {
         id: "R_repo1",
         owner: "bendrucker",
         name: "code-hub",
@@ -79,16 +78,11 @@ describe("buildLake", () => {
         visibility: "PUBLIC",
         fetched_at: new Date("2026-09-09T00:00:00Z"),
       },
-    ]);
-  });
-
-  it("writes a pull request row that reads back as D1 holds it", async () => {
-    await seed();
-
-    await buildLake(env, STARTED_AT);
-
-    expect(await rowsOf(pullRequests)).toEqual([
-      {
+    },
+    {
+      name: "a pull request",
+      table: pullRequests,
+      expected: {
         id: "PR_pull1",
         repository_id: "R_repo1",
         number: 2,
@@ -105,16 +99,11 @@ describe("buildLake", () => {
         review_count: 1,
         updated_at: new Date("2026-09-09T16:30:00Z"),
       },
-    ]);
-  });
-
-  it("writes a review row that reads back as D1 holds it", async () => {
-    await seed();
-
-    await buildLake(env, STARTED_AT);
-
-    expect(await rowsOf(reviews)).toEqual([
-      {
+    },
+    {
+      name: "a review",
+      table: reviews,
+      expected: {
         id: "PRR_review1",
         repository_id: "R_repo1",
         pull_request_number: 2,
@@ -122,16 +111,11 @@ describe("buildLake", () => {
         state: "APPROVED",
         submitted_at: new Date("2026-09-09T16:20:00Z"),
       },
-    ]);
-  });
-
-  it("writes an issue row that reads back as D1 holds it", async () => {
-    await seed();
-
-    await buildLake(env, STARTED_AT);
-
-    expect(await rowsOf(issues)).toEqual([
-      {
+    },
+    {
+      name: "an issue",
+      table: issues,
+      expected: {
         id: "I_issue1",
         repository_id: "R_repo1",
         number: 7,
@@ -143,18 +127,32 @@ describe("buildLake", () => {
         comment_count: 2,
         updated_at: new Date("2026-09-09T17:00:00Z"),
       },
-    ]);
-  });
-
-  it("writes a commit day keyed by the day string D1 holds", async () => {
+    },
+    {
+      name: "a commit day, keyed by the day string",
+      table: commitDays,
+      expected: { repository_id: "R_repo1", day: "2026-09-09", commit_count: 4 },
+    },
+  ])("writes $name that reads back as D1 holds it", async ({ table, expected }) => {
     await seed();
 
     await buildLake(env, STARTED_AT);
 
-    expect(await rowsOf(commitDays)).toEqual([
-      { repository_id: "R_repo1", day: "2026-09-09", commit_count: 4 },
-    ]);
+    expect(await rowsOf(table)).toEqual([expected]);
   });
+
+  it.each(LAKE_TABLES.map((table) => ({ name: table.name, table })))(
+    "covers every $name column D1 holds",
+    async ({ table }) => {
+      const stored = await env.DB.prepare(`PRAGMA table_info(${table.name})`).all<{
+        name: string;
+      }>();
+
+      expect(table.columns.map((column) => column.name)).toEqual(
+        stored.results.map((column) => column.name).filter((name) => name !== "published_at"),
+      );
+    },
+  );
 
   it("rebuilds a table in full rather than appending to it", async () => {
     await seed();
@@ -163,7 +161,7 @@ describe("buildLake", () => {
     await env.DB.prepare("DELETE FROM pull_requests").run();
     await buildLake(env, STARTED_AT);
 
-    const buffer = await readLakeObject(env.LAKE, tableKey(pullRequests));
+    const buffer = await readObject(env.LAKE, tableKey(pullRequests));
     expect(parquetRows(buffer ?? new ArrayBuffer(0))).toBe(0);
   });
 
@@ -197,6 +195,19 @@ describe("buildLake", () => {
     expect(stored?.error).toContain("is_fork");
     expect(stored?.finishedAt).not.toBeNull();
     expect(stored?.rowCounts).toEqual({});
+  });
+
+  it("leaves the last complete build in place when a table fails", async () => {
+    await seed();
+    await buildLake(env, STARTED_AT);
+
+    await env.DB.prepare("UPDATE repositories SET is_fork = 2").run();
+    await env.DB.prepare("DELETE FROM pull_requests").run();
+    await expect(buildLake(env, STARTED_AT)).rejects.toThrow("is_fork");
+
+    // The failing table is read alongside four that would have succeeded, so a
+    // build that writes as it encodes leaves those four a generation ahead.
+    expect(await rowsOf(pullRequests)).toHaveLength(1);
   });
 
   it("leaves a build visible while it is still running", async () => {

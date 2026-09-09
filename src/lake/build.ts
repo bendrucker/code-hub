@@ -4,7 +4,7 @@ import { issues } from "./issues";
 import { pullRequests } from "./pull-requests";
 import { repositories } from "./repositories";
 import { reviews } from "./reviews";
-import { encodeTable, type LakeTable } from "./table";
+import { type EncodedTable, encodeTable, type LakeTable } from "./table";
 
 export const LAKE_TABLES: readonly LakeTable[] = [
   repositories,
@@ -39,8 +39,13 @@ export async function buildLake(
   const id = await startBuild(env.DB, startedAt);
 
   try {
-    const written = await Promise.all(LAKE_TABLES.map((table) => writeTable(env, table)));
-    const rowCounts = Object.fromEntries(written.map((table) => [table.name, table.rows]));
+    // Every table encodes before any is written, so a table that throws leaves
+    // the bucket on the last complete build rather than mixing a rebuilt table
+    // with a stale one that a reader joining them could not tell apart.
+    const encoded = await Promise.all(LAKE_TABLES.map((table) => encodeOne(env.DB, table)));
+    await Promise.all(encoded.map((table) => writeTable(env.LAKE, table)));
+
+    const rowCounts = Object.fromEntries(encoded.map((table) => [table.table.name, table.rows]));
     const finishedAt = new Date().toISOString();
     await finishBuild(env.DB, id, rowCounts, finishedAt);
 
@@ -51,11 +56,16 @@ export async function buildLake(
   }
 }
 
-async function writeTable(env: Env, table: LakeTable): Promise<{ name: string; rows: number }> {
-  const { buffer, rows } = await encodeTable(env.DB, table);
-  await env.LAKE.put(tableKey(table), buffer, { httpMetadata: { contentType: CONTENT_TYPE } });
+interface EncodedLakeTable extends EncodedTable {
+  table: LakeTable;
+}
 
-  return { name: table.name, rows };
+async function encodeOne(db: D1Database, table: LakeTable): Promise<EncodedLakeTable> {
+  return { table, ...(await encodeTable(db, table)) };
+}
+
+function writeTable(bucket: R2Bucket, { table, buffer }: EncodedLakeTable): Promise<unknown> {
+  return bucket.put(tableKey(table), buffer, { httpMetadata: { contentType: CONTENT_TYPE } });
 }
 
 function message(error: unknown): string {

@@ -5,7 +5,8 @@ export interface LakeTable {
   // The D1 table, and the prefix segment the Parquet lands under.
   name: string;
   // Ordering for the paged read, which has to be total so no row is read twice
-  // or skipped as pages advance.
+  // or skipped as pages advance. Every key column is also a `columns` entry,
+  // since the page after this one starts from the last row's key.
   key: readonly string[];
   columns: readonly LakeColumn[];
 }
@@ -40,24 +41,43 @@ export async function encodeTable(db: D1Database, table: LakeTable): Promise<Enc
   return { buffer, rows: rows.length };
 }
 
+// Each page starts from the last row's key rather than an offset. An offset
+// counts rows the sync may have inserted ahead of it between pages, which reads
+// a row twice or skips one, and it makes D1 walk the rows it already returned.
 export async function readRows(
   db: D1Database,
   table: LakeTable,
 ): Promise<Record<string, unknown>[]> {
-  const names = table.columns.map((column) => column.name).join(", ");
-  const sql =
-    `SELECT ${names} FROM ${table.name}` +
-    ` ORDER BY ${table.key.join(", ")} LIMIT ${PAGE_SIZE} OFFSET ?`;
+  const selected = new Set(table.columns.map((column) => column.name));
+  const missing = table.key.filter((name) => !selected.has(name));
+  if (missing.length > 0) {
+    // A key column the select leaves out reads back undefined, which binds as
+    // NULL, matches no row, and ends the read early with the table truncated.
+    throw new Error(`${table.name} pages by ${missing.join(", ")}, which it does not select`);
+  }
 
-  const statement = db.prepare(sql);
+  const names = table.columns.map((column) => column.name).join(", ");
+  const key = table.key.join(", ");
+  const tail = ` ORDER BY ${key} LIMIT ${PAGE_SIZE}`;
+  const first = db.prepare(`SELECT ${names} FROM ${table.name}${tail}`);
+  const after = db.prepare(
+    `SELECT ${names} FROM ${table.name}` +
+      ` WHERE (${key}) > (${table.key.map((_, index) => `?${index + 1}`).join(", ")})${tail}`,
+  );
+
   const rows: Record<string, unknown>[] = [];
   let page: Record<string, unknown>[] = [];
+  let cursor: unknown[] | null = null;
 
   do {
+    const statement = cursor === null ? first : after.bind(...cursor);
     // eslint-disable-next-line no-await-in-loop
-    const result = await statement.bind(rows.length).all<Record<string, unknown>>();
+    const result = await statement.all<Record<string, unknown>>();
     page = result.results;
     rows.push(...page);
+
+    const last = page.at(-1);
+    cursor = last === undefined ? null : table.key.map((name) => last[name]);
   } while (page.length === PAGE_SIZE);
 
   return rows;

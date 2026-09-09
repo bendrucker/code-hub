@@ -37,6 +37,12 @@ describe("readRows", () => {
     expect(await readRows(env.DB, pullRequests)).toEqual([]);
   });
 
+  it("refuses a table that pages by a column it does not select", async () => {
+    const table = { ...pullRequests, key: ["published_at"] };
+
+    await expect(readRows(env.DB, table)).rejects.toThrow("published_at");
+  });
+
   it("leaves the publish marker out of the lake", async () => {
     await upsertPullRequests(env.DB, [pullRequest()]);
 
@@ -63,8 +69,6 @@ describe("encodeTable", () => {
 
     const { buffer } = await encodeTable(env.DB, pullRequests);
 
-    // Requesting ZSTD writes a file labelled ZSTD and stored uncompressed, which
-    // no reader accepts, so the codec that ships has to be one that reads back.
     expect(new Set(parquetCodecs(buffer))).toEqual(new Set(["SNAPPY"]));
     await expect(readParquet(buffer)).resolves.toHaveLength(50);
   });

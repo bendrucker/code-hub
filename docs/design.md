@@ -84,7 +84,7 @@ The build runs inside the Worker, which is what holds containers to the non-goal
 
 Snappy rather than ZSTD because that writer ships no ZSTD compressor. Asking for ZSTD does not fail. It records the codec, stores the page uncompressed, and produces a file no reader accepts, so the codec is named at the call rather than left to a default. Activity Hub writes ZSTD from DuckDB in its container, and DuckDB reads either prefix without being told which.
 
-Timestamps land as Parquet `TIMESTAMP_MILLIS` rather than the ISO strings D1 holds, since DuckDB then reads them as timestamps with no cast. `commit_days.day` stays a `YYYY-MM-DD` string, because it keys a daily count rather than naming an instant. `published_at` stays out of the lake, being the publisher's queue marker rather than something GitHub said.
+Timestamps land as Parquet `TIMESTAMP_MILLIS` rather than the ISO strings D1 holds, since DuckDB then reads them as timestamps with no cast.
 
 ## Data Model
 

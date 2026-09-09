@@ -1,5 +1,6 @@
 import { env } from "cloudflare:test";
 import { beforeEach, describe, expect, it } from "vitest";
+import { emptyBucket } from "../../test/r2";
 import {
   archiveContributions,
   archiveSearchPage,
@@ -10,12 +11,7 @@ import {
 
 const FETCHED_AT = "2026-09-09T12:00:00.000Z";
 
-async function clearRaw(): Promise<void> {
-  const listed = await env.RAW.list();
-  await env.RAW.delete(listed.objects.map((object) => object.key));
-}
-
-beforeEach(clearRaw);
+beforeEach(() => emptyBucket(env.RAW));
 
 describe("keys", () => {
   it("keys a search page by kind, window, fetch, and page", () => {
