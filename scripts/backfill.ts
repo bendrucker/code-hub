@@ -11,6 +11,8 @@ import { SYNC_KINDS, type SyncKind } from "../src/sync/kinds";
 
 const USAGE = `usage: ADMIN_TOKEN=... bun run backfill <base-url> [${SYNC_KINDS.join("|")}] [--from YYYY-MM]`;
 
+const LOOPBACK = new Set(["localhost", "127.0.0.1", "[::1]"]);
+
 // The route answers 200 with an `error` for a window that failed mid-walk, so
 // the shape is the same either way and the fields decide whether to continue.
 const BackfillResult = z.object({
@@ -126,12 +128,20 @@ function isSyncKind(value: string): value is SyncKind {
   return SYNC_KINDS.some((each) => each === value);
 }
 
+// Every call carries ADMIN_TOKEN as a bearer, so a mistyped scheme would put
+// the Worker's admin credential on the wire in the clear. wrangler dev serves
+// loopback over http, which is the one place that cannot be helped.
 function parseUrl(value: string): URL {
+  let url: URL;
   try {
-    return new URL(value);
+    url = new URL(value);
   } catch {
     fail(`${value} is not a URL`);
   }
+  if (url.protocol !== "https:" && !LOOPBACK.has(url.hostname)) {
+    fail(`${value} is not https, and ADMIN_TOKEN would travel in the clear`);
+  }
+  return url;
 }
 
 function fail(message: string): never {
