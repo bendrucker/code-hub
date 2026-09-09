@@ -1,0 +1,225 @@
+import { env } from "cloudflare:test";
+import { beforeEach, describe, expect, it } from "vitest";
+import { commitDay, issue, pullRequest, review, seedRepository } from "../../test/fixtures";
+import { parquetRows, readParquet } from "../../test/parquet";
+import { emptyBucket, readObject } from "../../test/r2";
+import { upsertCommitDays, upsertIssues, upsertPullRequests, upsertReviews } from "../store";
+import { buildLake, LAKE_TABLES, tableKey } from "./build";
+import { readLatestBuild } from "./builds";
+import { commitDays } from "./commit-days";
+import { issues } from "./issues";
+import { pullRequests } from "./pull-requests";
+import { repositories } from "./repositories";
+import { reviews } from "./reviews";
+import type { LakeTable } from "./table";
+
+const STARTED_AT = "2026-09-10T03:00:00.000Z";
+
+async function seed(): Promise<void> {
+  await seedRepository(env.DB);
+  await upsertPullRequests(env.DB, [pullRequest()]);
+  await upsertReviews(env.DB, [review()]);
+  await upsertIssues(env.DB, [issue()]);
+  await upsertCommitDays(env.DB, [commitDay()]);
+}
+
+async function rowsOf(table: LakeTable): Promise<Record<string, unknown>[]> {
+  const buffer = await readObject(env.LAKE, tableKey(table));
+  expect(buffer, `${table.name} was not written`).not.toBeNull();
+
+  return readParquet(buffer ?? new ArrayBuffer(0));
+}
+
+beforeEach(() => emptyBucket(env.LAKE));
+
+describe("buildLake", () => {
+  it("writes every table under the shared bucket's github prefix", async () => {
+    await seed();
+
+    await buildLake(env, STARTED_AT);
+
+    const listed = await env.LAKE.list();
+    expect(listed.objects.map((object) => object.key).toSorted()).toEqual(
+      LAKE_TABLES.map(tableKey).toSorted(),
+    );
+    expect(listed.objects.every((object) => object.key.startsWith("github/v1/"))).toBe(true);
+  });
+
+  it("reports the rows it wrote per table", async () => {
+    await seed();
+
+    const built = await buildLake(env, STARTED_AT);
+
+    expect(built.rowCounts).toEqual({
+      repositories: 1,
+      pull_requests: 1,
+      reviews: 1,
+      issues: 1,
+      commit_days: 1,
+    });
+    expect(built.startedAt).toBe(STARTED_AT);
+  });
+
+  it.each<{ name: string; table: LakeTable; expected: Record<string, unknown> }>([
+    {
+      name: "a repository",
+      table: repositories,
+      expected: {
+        id: "R_repo1",
+        owner: "bendrucker",
+        name: "code-hub",
+        description: "System of record for GitHub contribution data",
+        url: "https://github.com/bendrucker/code-hub",
+        stargazer_count: 3,
+        primary_language: "TypeScript",
+        primary_language_color: "#3178c6",
+        created_at: new Date("2026-09-01T00:00:00Z"),
+        is_fork: false,
+        visibility: "PUBLIC",
+        fetched_at: new Date("2026-09-09T00:00:00Z"),
+      },
+    },
+    {
+      name: "a pull request",
+      table: pullRequests,
+      expected: {
+        id: "PR_pull1",
+        repository_id: "R_repo1",
+        number: 2,
+        title: "add README and design doc",
+        author: "bendrucker",
+        created_at: new Date("2026-09-09T16:00:00Z"),
+        merged_at: new Date("2026-09-09T16:30:00Z"),
+        closed_at: new Date("2026-09-09T16:30:00Z"),
+        state: "MERGED",
+        additions: 345,
+        deletions: 2,
+        changed_files: 2,
+        comment_count: 0,
+        review_count: 1,
+        updated_at: new Date("2026-09-09T16:30:00Z"),
+      },
+    },
+    {
+      name: "a review",
+      table: reviews,
+      expected: {
+        id: "PRR_review1",
+        repository_id: "R_repo1",
+        pull_request_number: 2,
+        pull_request_author: "octocat",
+        state: "APPROVED",
+        submitted_at: new Date("2026-09-09T16:20:00Z"),
+      },
+    },
+    {
+      name: "an issue",
+      table: issues,
+      expected: {
+        id: "I_issue1",
+        repository_id: "R_repo1",
+        number: 7,
+        title: "publish the code feed",
+        author: "bendrucker",
+        created_at: new Date("2026-09-09T17:00:00Z"),
+        closed_at: null,
+        state: "OPEN",
+        comment_count: 2,
+        updated_at: new Date("2026-09-09T17:00:00Z"),
+      },
+    },
+    {
+      name: "a commit day, keyed by the day string",
+      table: commitDays,
+      expected: { repository_id: "R_repo1", day: "2026-09-09", commit_count: 4 },
+    },
+  ])("writes $name that reads back as D1 holds it", async ({ table, expected }) => {
+    await seed();
+
+    await buildLake(env, STARTED_AT);
+
+    expect(await rowsOf(table)).toEqual([expected]);
+  });
+
+  it.each(LAKE_TABLES.map((table) => ({ name: table.name, table })))(
+    "covers every $name column D1 holds",
+    async ({ table }) => {
+      const stored = await env.DB.prepare(`PRAGMA table_info(${table.name})`).all<{
+        name: string;
+      }>();
+
+      expect(table.columns.map((column) => column.name)).toEqual(
+        stored.results.map((column) => column.name).filter((name) => name !== "published_at"),
+      );
+    },
+  );
+
+  it("rebuilds a table in full rather than appending to it", async () => {
+    await seed();
+    await buildLake(env, STARTED_AT);
+
+    await env.DB.prepare("DELETE FROM pull_requests").run();
+    await buildLake(env, STARTED_AT);
+
+    const buffer = await readObject(env.LAKE, tableKey(pullRequests));
+    expect(parquetRows(buffer ?? new ArrayBuffer(0))).toBe(0);
+  });
+
+  it("writes a readable empty file for a table with no rows", async () => {
+    await buildLake(env, STARTED_AT);
+
+    expect(await rowsOf(issues)).toEqual([]);
+  });
+
+  it("records the build with its per-table counts", async () => {
+    await seed();
+
+    const built = await buildLake(env, STARTED_AT);
+
+    const stored = await readLatestBuild(env.DB);
+    expect(stored?.startedAt).toBe(STARTED_AT);
+    expect(stored?.finishedAt).toBe(built.finishedAt);
+    expect(stored?.rowCounts).toEqual(built.rowCounts);
+    expect(stored?.error).toBeNull();
+  });
+
+  it("records what failed and lets the error out", async () => {
+    await seedRepository(env.DB);
+    // `is_fork` is an integer column, so a value outside 0 and 1 reaches the
+    // lake as something no column type accepts.
+    await env.DB.prepare("UPDATE repositories SET is_fork = 2").run();
+
+    await expect(buildLake(env, STARTED_AT)).rejects.toThrow("is_fork");
+
+    const stored = await readLatestBuild(env.DB);
+    expect(stored?.error).toContain("is_fork");
+    expect(stored?.finishedAt).not.toBeNull();
+    expect(stored?.rowCounts).toEqual({});
+  });
+
+  it("leaves the last complete build in place when a table fails", async () => {
+    await seed();
+    await buildLake(env, STARTED_AT);
+
+    await env.DB.prepare("UPDATE repositories SET is_fork = 2").run();
+    await env.DB.prepare("DELETE FROM pull_requests").run();
+    await expect(buildLake(env, STARTED_AT)).rejects.toThrow("is_fork");
+
+    // The failing table is read alongside four that would have succeeded, so a
+    // build that writes as it encodes leaves those four a generation ahead.
+    expect(await rowsOf(pullRequests)).toHaveLength(1);
+  });
+
+  it("leaves a build visible while it is still running", async () => {
+    const running = buildLake(env, STARTED_AT);
+    const stored = await readLatestBuild(env.DB);
+
+    expect(stored?.startedAt).toBe(STARTED_AT);
+    expect(stored?.finishedAt).toBeNull();
+    await running;
+  });
+
+  it("reports no build before the first one runs", async () => {
+    await expect(readLatestBuild(env.DB)).resolves.toBeNull();
+  });
+});
