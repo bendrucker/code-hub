@@ -1,4 +1,5 @@
 import { monthWindow } from "./github/windows";
+import { buildLake, type LakeBuild, readLatestBuild } from "./lake";
 import {
   backfill,
   BACKFILL_START,
@@ -22,6 +23,7 @@ export interface SyncStatus {
   generatedAt: string;
   kinds: Record<SyncKind, KindStatus>;
   failures: SyncRun[];
+  lake: LakeBuild | null;
 }
 
 export async function handleSyncStatus(request: Request, env: Env): Promise<Response> {
@@ -31,22 +33,22 @@ export async function handleSyncStatus(request: Request, env: Env): Promise<Resp
   }
 
   try {
-    const [watermarks, runs, failures] = await Promise.all([
+    const [watermarks, runs, failures, lake] = await Promise.all([
       readWatermarks(env.DB),
       lastRuns(env.DB),
       recentFailures(env.DB, FAILURE_LIMIT),
+      readLatestBuild(env.DB),
     ]);
 
     const status: SyncStatus = {
       generatedAt: new Date().toISOString(),
       kinds: byKind((kind) => ({ watermark: watermarks[kind], lastRun: runs[kind] })),
       failures,
+      lake,
     };
     return Response.json(status);
   } catch (error) {
-    // Reading this route is the first step of diagnosing a stuck sync, and a
-    // bare 500 sends the reader to the logs to find out what it was.
-    return Response.json({ error: String(error) }, { status: 500 });
+    return serverError(error);
   }
 }
 
@@ -76,12 +78,33 @@ export async function handleBackfill(request: Request, env: Env): Promise<Respon
     if (error instanceof MissingSecretError) {
       return Response.json({ error: error.message }, { status: 503 });
     }
-    return Response.json({ error: String(error) }, { status: 500 });
+    return serverError(error);
+  }
+}
+
+// Runs the same build the nightly cron runs, so a schema change does not have
+// to wait for the next night.
+export async function handleLakeBuild(request: Request, env: Env): Promise<Response> {
+  const refused = await authorize(request, env);
+  if (refused !== null) {
+    return refused;
+  }
+
+  try {
+    return Response.json(await buildLake(env));
+  } catch (error) {
+    return serverError(error);
   }
 }
 
 function isSyncKind(value: string | null): value is SyncKind {
   return SYNC_KINDS.some((kind) => kind === value);
+}
+
+// These routes are the first step of diagnosing a stuck sync or a stale lake.
+// A bare 500 sends the reader to the logs to find out what went wrong.
+function serverError(error: unknown): Response {
+  return Response.json({ error: String(error) }, { status: 500 });
 }
 
 // Unset means the route does not exist yet, so an unconfigured deployment

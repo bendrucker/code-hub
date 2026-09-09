@@ -1,5 +1,5 @@
 import { createScheduledController, env, SELF } from "cloudflare:test";
-import { afterEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { stubFetch } from "../test/fetch-stub";
 import {
   contributionsPayload,
@@ -7,7 +7,9 @@ import {
   requestBody,
   searchPayload,
 } from "../test/github-fixtures";
+import { emptyBucket } from "../test/r2";
 import worker from "./index";
+import { LAKE_CRON, readLatestBuild } from "./lake";
 import { recentRuns } from "./sync/runs";
 import { advance } from "./sync/state";
 
@@ -62,5 +64,37 @@ describe("scheduled", () => {
     await worker.scheduled(createScheduledController({ cron: "0 * * * *" }), env);
 
     expect(await recentRuns(env.DB, "issue", 1)).toEqual([]);
+  });
+});
+
+describe("the nightly lake cron", () => {
+  beforeEach(() => emptyBucket(env.LAKE));
+
+  afterEach(() => {
+    vi.unstubAllGlobals();
+    delete env.GITHUB_TOKEN;
+  });
+
+  it("is one the deployment triggers", () => {
+    expect(env.TEST_CRONS).toContain(LAKE_CRON);
+  });
+
+  it("builds the lake instead of syncing", async () => {
+    env.GITHUB_TOKEN = "token";
+    await advance(env.DB, "issue", "2026-09-09T10:00:00.000Z", "2026-09-09T10:00:00Z");
+    const { fetch, requests } = stubFetch(() => {
+      throw new Error("the lake build reads D1, not GitHub");
+    });
+    vi.stubGlobal("fetch", fetch);
+
+    await worker.scheduled(createScheduledController({ cron: LAKE_CRON }), env);
+
+    expect(requests).toEqual([]);
+    // `buildLake` finishes the row only once every table is in R2, so a build
+    // that carries counts and no error is one that wrote.
+    expect(await readLatestBuild(env.DB)).toMatchObject({
+      error: null,
+      rowCounts: { repositories: 0 },
+    });
   });
 });

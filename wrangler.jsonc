@@ -21,7 +21,10 @@
   "triggers": {
     // Hourly incremental sync. GitHub's search API is windowed by date rather
     // than by event, so a missed run costs nothing but a wider next window.
-    "crons": ["0 * * * *"],
+    //
+    // The nightly lake build sits off the hour so it never shares an instant
+    // with a sync invocation. `LAKE_CRON` is the expression it dispatches on.
+    "crons": ["0 * * * *", "30 9 * * *"],
   },
   "d1_databases": [
     {

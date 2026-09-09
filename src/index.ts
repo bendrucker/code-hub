@@ -1,4 +1,5 @@
-import { handleBackfill, handleSyncStatus } from "./admin";
+import { handleBackfill, handleLakeBuild, handleSyncStatus } from "./admin";
+import { buildLake, LAKE_CRON } from "./lake";
 import { syncIncremental } from "./sync/incremental";
 
 export default {
@@ -13,10 +14,20 @@ export default {
     if (request.method === "POST" && url.pathname === "/admin/backfill") {
       return handleBackfill(request, env);
     }
+    if (request.method === "POST" && url.pathname === "/admin/lake") {
+      return handleLakeBuild(request, env);
+    }
     return new Response("Not Found", { status: 404 });
   },
 
   async scheduled(controller, env): Promise<void> {
+    if (controller.cron === LAKE_CRON) {
+      // An unhandled error marks the scheduled invocation failed, so a build
+      // that never wrote its tables gets noticed.
+      await buildLake(env);
+      return;
+    }
+
     await syncIncremental(env);
     console.log(`sync trigger ${controller.cron} finished`);
   },

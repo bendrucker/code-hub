@@ -10,7 +10,7 @@ The website's own GitHub sync stores one aggregate row per repository per year. 
 
 ## Architecture
 
-One Worker, one D1 database, one hourly cron, and R2 for both raw pages and lake output. No queues and no container.
+One Worker, one D1 database, an hourly sync cron, a nightly lake cron, and R2 for both raw pages and lake output. No queues and no container.
 
 ```mermaid
 flowchart TB
@@ -73,7 +73,17 @@ curl -X POST -H "Authorization: Bearer $ADMIN_TOKEN" \
 
 One call walks `BACKFILL_WINDOWS` monthly windows and answers with `next`, the `from` the following call resumes at. `next` is null once the walk reaches the present. `kind=contributions` walks the years `contributionYears` reports and reads its year out of `from`.
 
-Each contributions year is checked against the event tables for that year. A disagreement lands on the run as a note rather than an error, because a silently truncated search window and a contribution the token cannot see look the same from here. `GET /admin/sync` reports it alongside the watermarks and the last ten failures.
+Each contributions year is checked against the event tables for that year. A disagreement lands on the run as a note rather than an error, because a silently truncated search window and a contribution the token cannot see look the same from here. `GET /admin/sync` reports it alongside the watermarks, the last ten failures, and the most recent lake build.
+
+## Lake
+
+A second cron rebuilds the lake nightly at 09:30 UTC, reading D1 and writing Snappy Parquet under `github/v1/` in `activity-hub-lake`. Every table encodes before any is written, so a table that fails leaves the bucket on the last complete build rather than mixing one rebuilt table with four stale ones. `lake_builds` records each build with its per-table row counts, or the reason it failed.
+
+To rewrite the tables before the next nightly build, run the same build from an admin route:
+
+```sh
+curl -X POST -H "Authorization: Bearer $ADMIN_TOKEN" "$WORKER/admin/lake"
+```
 
 ## Secrets
 
@@ -84,11 +94,11 @@ Each contributions year is checked against the event tables for that year. A dis
 
 The GitHub token's scope decides what the hub can see. What it publishes is a separate question, still open in [docs/design.md](docs/design.md).
 
-`ADMIN_TOKEN` is optional. `/admin/sync` and `/admin/backfill` answer 404 while it is unset. A deployment that never sets one exposes no admin surface.
+`ADMIN_TOKEN` is optional. `/admin/sync`, `/admin/backfill`, and `/admin/lake` answer 404 while it is unset. A deployment that never sets one exposes no admin surface.
 
 ## Infrastructure
 
-`wrangler.jsonc` owns the Worker, the `DB` D1 binding, the `RAW` and `LAKE` R2 bindings for `code-hub-raw` and `activity-hub-lake`, the hourly cron trigger, and two public vars: `GITHUB_LOGIN` for whose history the hub reads and `BACKFILL_WINDOWS` for how many windows one backfill call walks. The service binding to the site joins them when publishing lands. Migrations apply to production D1 from CI on merge to `main`.
+`wrangler.jsonc` owns the Worker, the `DB` D1 binding, the `RAW` and `LAKE` R2 bindings for `code-hub-raw` and `activity-hub-lake`, both cron triggers, and two public vars: `GITHUB_LOGIN` for whose history the hub reads and `BACKFILL_WINDOWS` for how many windows one backfill call walks. The service binding to the site joins them when publishing lands. Migrations apply by hand with `wrangler d1 migrations apply code-hub --remote` until a deploy job exists.
 
 There is no Terraform here. Activity Hub needs it for a DNS record, a Workers route, and the Cloudflare Access applications in front of its admin routes. This hub is reached by cron and by a service binding. It has no hostname to manage. `/admin/sync` sits behind `ADMIN_TOKEN` alone, with no Access application in front of it.
 
@@ -110,4 +120,4 @@ bun run dev
 
 ## Status
 
-Extraction, normalization, and the sync loop are written. Nothing is deployed, no D1 migration has been applied to production, and bendrucker.me still runs its own GitHub sync. Publishing the feed and building the lake tables come next, and the open decisions in [docs/design.md](docs/design.md) come before either.
+Extraction, normalization, the sync loop, and the lake build are written. Nothing is deployed, no D1 migration has been applied to production, and bendrucker.me still runs its own GitHub sync. Publishing the feed comes next, and the open decisions in [docs/design.md](docs/design.md) come before it.
