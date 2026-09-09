@@ -1,5 +1,5 @@
-// The GraphQL documents. Every one selects `rateLimit` so the extractor reads
-// its remaining budget off whatever response it just took.
+// Every GraphQL document selects `rateLimit` so the extractor reads its
+// remaining budget off whatever response it just took.
 const gql = (strings: TemplateStringsArray) => strings.raw.join("");
 
 const REPOSITORY_FRAGMENT = gql`

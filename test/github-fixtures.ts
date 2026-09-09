@@ -1,4 +1,3 @@
-// Response fixtures shaped like the documents in `src/github/queries.ts`.
 export interface RateLimitOverrides {
   cost?: number;
   remaining?: number;

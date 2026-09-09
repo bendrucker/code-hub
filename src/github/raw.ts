@@ -17,11 +17,10 @@ export function contributionsKey(year: number, fetchedAt: string): string {
   return `raw/contributions/${year}/${fetchedAt}.json`;
 }
 
-// An object is written once and never rewritten. Re-running a window writes new
-// pages under a new fetch timestamp rather than replacing what a previous run
-// saw, which is what keeps a normalization bug diagnosable against the bytes
-// that caused it. The conditional put is the enforcement rather than a
-// convention, and a false return means the key was already there.
+// Re-running a window writes new pages under a new fetch timestamp rather
+// than replacing what a previous run saw, keeping a normalization bug
+// diagnosable against the bytes that caused it. A false return means the key
+// was already there.
 export async function writeOnce(bucket: R2Bucket, key: string, body: string): Promise<boolean> {
   const written = await bucket.put(key, body, {
     onlyIf: { etagDoesNotMatch: "*" },

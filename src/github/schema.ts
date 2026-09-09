@@ -1,6 +1,4 @@
-// Runtime shapes for the documents in `queries.ts`. Every response is parsed
-// here before anything reads it, and every exported type is inferred from its
-// schema.
+// Runtime shapes for the documents in `queries.ts`.
 import { z } from "zod";
 
 export const rateLimit = z.object({

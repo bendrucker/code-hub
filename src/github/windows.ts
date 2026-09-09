@@ -53,7 +53,6 @@ function scope(kind: EventKind, login: string): string {
   return `${type} ${involvement}:${login}`;
 }
 
-// Backfill walks fixed windows by creation date.
 export function backfillSearch(kind: EventKind, login: string, window: MonthWindow): string {
   return `${scope(kind, login)} created:${window.start}..${window.end}`;
 }
