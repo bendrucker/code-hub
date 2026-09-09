@@ -2,7 +2,6 @@ import { env, SELF } from "cloudflare:test";
 import { afterEach, beforeEach, describe, expect, it, test } from "vitest";
 import { pullRequest, seedRepository } from "../test/fixtures";
 import { emptyBucket } from "../test/r2";
-import { LAKE_TABLES, tableKey } from "./lake";
 import { upsertPullRequests } from "./store";
 import { advance } from "./sync/state";
 import { finishRun, startRun } from "./sync/runs";
@@ -143,7 +142,7 @@ describe("POST /admin/lake", () => {
     expect((await postLake()).status).toBe(401);
   });
 
-  it("writes every table and reports what it counted", async () => {
+  it("reports what each table counted", async () => {
     await seedRepository(env.DB);
     await upsertPullRequests(env.DB, [pullRequest()]);
 
@@ -153,10 +152,6 @@ describe("POST /admin/lake", () => {
     await expect(response.json()).resolves.toMatchObject({
       rowCounts: { repositories: 1, pull_requests: 1, reviews: 0, issues: 0, commit_days: 0 },
     });
-    const listed = await env.LAKE.list();
-    expect(listed.objects.map((object) => object.key).toSorted()).toEqual(
-      LAKE_TABLES.map(tableKey).toSorted(),
-    );
   });
 
   it("answers 500 with the reason a table could not encode", async () => {

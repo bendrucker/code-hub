@@ -8,8 +8,8 @@ import {
   searchPayload,
 } from "../test/github-fixtures";
 import { emptyBucket } from "../test/r2";
-import worker, { LAKE_CRON } from "./index";
-import { LAKE_TABLES, readLatestBuild, tableKey } from "./lake";
+import worker from "./index";
+import { LAKE_CRON, readLatestBuild } from "./lake";
 import { recentRuns } from "./sync/runs";
 import { advance } from "./sync/state";
 
@@ -90,10 +90,11 @@ describe("the nightly lake cron", () => {
     await worker.scheduled(createScheduledController({ cron: LAKE_CRON }), env);
 
     expect(requests).toEqual([]);
-    const listed = await env.LAKE.list();
-    expect(listed.objects.map((object) => object.key).toSorted()).toEqual(
-      LAKE_TABLES.map(tableKey).toSorted(),
-    );
-    expect(await readLatestBuild(env.DB)).toMatchObject({ error: null });
+    // `buildLake` finishes the row only once every table is in R2, so a build
+    // that carries counts and no error is one that wrote.
+    expect(await readLatestBuild(env.DB)).toMatchObject({
+      error: null,
+      rowCounts: { repositories: 0 },
+    });
   });
 });

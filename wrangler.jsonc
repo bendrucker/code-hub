@@ -23,8 +23,7 @@
     // than by event, so a missed run costs nothing but a wider next window.
     //
     // The nightly lake build sits off the hour so it never shares an instant
-    // with a sync invocation. `LAKE_CRON` in `src/index.ts` is the expression
-    // the handler dispatches on, and a test holds the two together.
+    // with a sync invocation. `LAKE_CRON` is the expression it dispatches on.
     "crons": ["0 * * * *", "30 9 * * *"],
   },
   "d1_databases": [

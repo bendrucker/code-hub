@@ -20,6 +20,8 @@ Cloudflare Workers (TypeScript), Bun, Wrangler. Storage: D1 (`DB`), R2 (`RAW` fo
 
 CI runs on every PR and on push to `main` (`.github/workflows/ci.yml`): typecheck, test, lint, format check, and a check that `worker-configuration.d.ts` is current.
 
+`src/index.ts` exports the default handler and nothing else. workerd reads every named export of the entrypoint as a handler and refuses a string, and neither the test suite nor CI catches that: `bun run dev` is what surfaces it. A constant the handler needs lives in the module it describes.
+
 Deploys are not wired up. The repository has no `CLOUDFLARE_API_TOKEN` secret, so there is no deploy job yet. Adding one means copying activity-hub's: apply D1 migrations, then `wrangler deploy`, gated on `check` and on push to `main`. Until then, migrations in `migrations/` apply by hand with `wrangler d1 migrations apply code-hub --remote`.
 
 ## Cloudflare Configuration

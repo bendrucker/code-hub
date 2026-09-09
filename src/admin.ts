@@ -48,9 +48,7 @@ export async function handleSyncStatus(request: Request, env: Env): Promise<Resp
     };
     return Response.json(status);
   } catch (error) {
-    // Reading this route is the first step of diagnosing a stuck sync, and a
-    // bare 500 sends the reader to the logs to find out what it was.
-    return Response.json({ error: String(error) }, { status: 500 });
+    return serverError(error);
   }
 }
 
@@ -80,12 +78,12 @@ export async function handleBackfill(request: Request, env: Env): Promise<Respon
     if (error instanceof MissingSecretError) {
       return Response.json({ error: error.message }, { status: 503 });
     }
-    return Response.json({ error: String(error) }, { status: 500 });
+    return serverError(error);
   }
 }
 
-// The same build the nightly cron runs, for a schema change that wants the
-// tables rewritten before the next night rather than after it.
+// Runs the same build the nightly cron runs, so a schema change does not have
+// to wait for the next night.
 export async function handleLakeBuild(request: Request, env: Env): Promise<Response> {
   const refused = await authorize(request, env);
   if (refused !== null) {
@@ -95,14 +93,18 @@ export async function handleLakeBuild(request: Request, env: Env): Promise<Respo
   try {
     return Response.json(await buildLake(env));
   } catch (error) {
-    // `lake_builds` already holds the reason, and this saves the caller a
-    // round trip through /admin/sync to read it.
-    return Response.json({ error: String(error) }, { status: 500 });
+    return serverError(error);
   }
 }
 
 function isSyncKind(value: string | null): value is SyncKind {
   return SYNC_KINDS.some((kind) => kind === value);
+}
+
+// These routes are the first step of diagnosing a stuck sync or a stale lake.
+// A bare 500 sends the reader to the logs to find out what went wrong.
+function serverError(error: unknown): Response {
+  return Response.json({ error: String(error) }, { status: 500 });
 }
 
 // Unset means the route does not exist yet, so an unconfigured deployment

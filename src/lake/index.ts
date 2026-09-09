@@ -1,4 +1,4 @@
-export { buildLake, LAKE_TABLES, type LakeBuildResult, tableKey } from "./build";
+export { buildLake, LAKE_CRON, LAKE_TABLES, type LakeBuildResult, tableKey } from "./build";
 export { type LakeBuild, readLatestBuild } from "./builds";
 export { type Cell, type LakeColumn, LakeValueError } from "./columns";
 export { commitDays } from "./commit-days";

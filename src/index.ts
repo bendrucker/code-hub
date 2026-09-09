@@ -1,11 +1,6 @@
 import { handleBackfill, handleLakeBuild, handleSyncStatus } from "./admin";
-import { buildLake } from "./lake";
+import { buildLake, LAKE_CRON } from "./lake";
 import { syncIncremental } from "./sync/incremental";
-
-// The nightly trigger in wrangler.jsonc. Every other cron runs the sync, so an
-// expression that drifts from the config leaves the lake unbuilt and reports
-// nothing. `src/index.test.ts` checks this against the configured triggers.
-export const LAKE_CRON = "30 9 * * *";
 
 export default {
   fetch(request, env): Response | Promise<Response> {
@@ -27,8 +22,8 @@ export default {
 
   async scheduled(controller, env): Promise<void> {
     if (controller.cron === LAKE_CRON) {
-      // Rethrown rather than logged, so a build that never wrote its tables
-      // shows as a failed invocation instead of a successful one.
+      // An unhandled error marks the scheduled invocation failed, so a build
+      // that never wrote its tables gets noticed.
       await buildLake(env);
       return;
     }

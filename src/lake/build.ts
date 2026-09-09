@@ -14,6 +14,14 @@ export const LAKE_TABLES: readonly LakeTable[] = [
   commitDays,
 ];
 
+// Matches the nightly trigger in wrangler.jsonc. `scheduled` runs the sync on
+// every other cron, so an expression that drifts from the config leaves the
+// lake unbuilt and reports nothing.
+//
+// It lives here rather than beside the handler because workerd reads every
+// named export of the entrypoint as a handler and refuses a string.
+export const LAKE_CRON = "30 9 * * *";
+
 // Activity Hub owns the bucket and writes its own tables under `lake/v1/`, so
 // this project's prefix keeps one DuckDB session able to read both.
 const PREFIX = "github/v1";
