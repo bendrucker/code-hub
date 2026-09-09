@@ -38,12 +38,10 @@ jobs:
     runs-on: ubuntu-latest
     concurrency:
       group: deploy
-    # activity-hub's deploy job assumes the token exists. This repository has
-    # no CLOUDFLARE_API_TOKEN yet, and a deploy job that fails without one
-    # turns every merge to main red for a reason nobody can fix in a commit.
-    # The first step reads the secret and skips the rest of the job when it is
-    # empty. Setting the secret is the only change this workflow needs to
-    # start deploying.
+    # This repository has no CLOUDFLARE_API_TOKEN yet, and a deploy job that fails
+    # without one turns every merge to main red for a reason nobody can fix in a
+    # commit. Setting the secret is the only change this workflow needs to start
+    # deploying.
     env:
       CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
     steps:

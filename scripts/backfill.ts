@@ -57,8 +57,7 @@ try {
 }
 
 async function walk(kind: SyncKind): Promise<void> {
-  // Undefined leaves `from` off the first request so the route picks its own
-  // start. After that the resume point comes from the call before it.
+  // Undefined leaves `from` off the first request so the route picks its own start.
   let from = flags.from;
 
   for (;;) {
