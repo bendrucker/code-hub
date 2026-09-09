@@ -1,0 +1,20 @@
+{
+  "$schema": "./node_modules/oxlint/configuration_schema.json",
+  "ignorePatterns": ["worker-configuration.d.ts", ".wrangler/", "tmp/"],
+  "categories": {
+    "correctness": "error",
+    "suspicious": "error",
+    "perf": "error"
+  },
+  "overrides": [
+    {
+      // Test helpers live in the describe block they serve, and awaiting a
+      // seed per row costs nothing a test notices.
+      "files": ["**/*.test.ts", "test/**"],
+      "rules": {
+        "no-await-in-loop": "off",
+        "unicorn/consistent-function-scoping": "off"
+      }
+    }
+  ]
+}

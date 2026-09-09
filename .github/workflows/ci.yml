@@ -1,0 +1,33 @@
+name: CI
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - uses: oven-sh/setup-bun@v2
+      - run: bun install --frozen-lockfile
+      - run: bun run typecheck
+      - run: bun run test
+      - run: bun run lint
+      - run: bun run format:check
+      - run: bun run types
+      - name: worker-configuration.d.ts is current
+        run: |
+          git diff --exit-code -- worker-configuration.d.ts \
+            || { echo '::error::run `bun run types` and commit the result'; exit 1; }
+      - uses: j178/prek-action@v3.0.0
+        env:
+          SKIP: no-commit-to-branch

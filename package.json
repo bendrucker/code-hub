@@ -1,0 +1,28 @@
+{
+  "name": "code-hub",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "typecheck": "tsc --noEmit",
+    "lint": "oxlint --report-unused-disable-directives && ast-grep scan",
+    "test": "vitest run",
+    "format": "oxfmt .",
+    "format:check": "oxfmt --check .",
+    "types": "wrangler types",
+    "dev": "wrangler dev",
+    "wrangler": "wrangler"
+  },
+  "devDependencies": {
+    "@ast-grep/cli": "^0.45.3",
+    "@cloudflare/vitest-pool-workers": "^0.22.0",
+    "@types/bun": "^1.4.2",
+    "oxfmt": "0.67.0",
+    "oxlint": "1.82.0",
+    "typescript": "^7.0.2",
+    "vitest": "^4.1.11",
+    "wrangler": "^4.130.0"
+  },
+  "trustedDependencies": [
+    "@ast-grep/cli"
+  ]
+}
