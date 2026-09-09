@@ -40,7 +40,7 @@ The raw bucket is the system of record. Rebuilding the event tables after a sche
 
 Lake tables land under a `github/` prefix in the `activity-hub-lake` bucket that Activity Hub already writes. Sharing one bucket is what lets a single DuckDB session join rides against pull requests by day, and it is the only real cross-project concern.
 
-The site is a read-only consumer. Writes reach its D1 only through the `Publish` entrypoint it exposes over a service binding, which validates every row on arrival and answers a bad shape with a `ValidationError`. The binding carries no credential and tells the callee nothing about who called. That method list is the whole security boundary.
+The site is a read-only consumer. The design routes writes to its D1 through the `Publish` entrypoint it exposes over a service binding, which validates every row on arrival and answers a bad shape with a `ValidationError`. The binding would carry no credential and tell the callee nothing about who called, leaving that method list as the whole security boundary. None of it exists yet: the service binding and the publish path land with the feed.
 
 See [docs/design.md](docs/design.md) for the full design, the extraction budget, and the decisions still open.
 
@@ -48,13 +48,13 @@ See [docs/design.md](docs/design.md) for the full design, the extraction budget,
 
 One row per event, at the grain GitHub hands over without crawling each repository.
 
-| Table           | Grain                                                                                                                                                                             |
-| --------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `pull_requests` | One PR I authored: repository, number, title, created at, merged at, closed at, state, additions, deletions, changed files, comment and review counts, base repository visibility |
-| `reviews`       | One review I gave: repository, PR number, state, submitted at, PR author                                                                                                          |
-| `issues`        | One issue: repository, number, title, created at, closed at, state, comment count                                                                                                 |
-| `commit_days`   | One repository on one day, carrying that day's commit count                                                                                                                       |
-| `repositories`  | The dimension: owner, name, description, url, stars, primary language, created at, fork, visibility                                                                               |
+| Table           | Grain                                                                                                                                                 |
+| --------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `pull_requests` | One PR I authored: repository, number, title, created at, merged at, closed at, state, additions, deletions, changed files, comment and review counts |
+| `reviews`       | One review I gave: repository, PR number, state, submitted at, PR author                                                                              |
+| `issues`        | One issue I opened: repository, number, title, created at, closed at, state, comment count                                                            |
+| `commit_days`   | One day of commits for one repository: repository, day, commit count                                                                                  |
+| `repositories`  | One repository the event tables join to: owner, name, description, url, stars, primary language, created at, fork, visibility                         |
 
 A sync state table alongside these records the last window read per event type. Commits are daily counts because that is how `contributionsCollection` already exposes them. Per-commit history, comment bodies, and individual review comments stay out of the first version. Each one needs a walk of every PR in every repository, and per-PR counts give most of the analytics value at a hundredth of the requests.
 
