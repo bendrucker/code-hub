@@ -11,6 +11,8 @@ import { SYNC_KINDS, type SyncKind } from "../src/sync/kinds";
 
 const USAGE = `usage: ADMIN_TOKEN=... bun run backfill <base-url> [${SYNC_KINDS.join("|")}] [--from YYYY-MM]`;
 
+const KIND_WIDTH = Math.max(...SYNC_KINDS.map((kind) => kind.length));
+
 const LOOPBACK = new Set(["localhost", "127.0.0.1", "[::1]"]);
 
 // The route answers 200 with an `error` for a window that failed mid-walk, so
@@ -42,6 +44,12 @@ if (target === undefined) {
 if (requested !== undefined && !isSyncKind(requested)) {
   fail(USAGE);
 }
+// A resume point belongs to the kind that stopped there. Applying it to all
+// four would start the ones still behind it past history they never walked,
+// and they would report done with the gap left in place.
+if (flags.from !== undefined && requested === undefined) {
+  fail("--from resumes one kind, so name which one");
+}
 
 const base = parseUrl(target);
 const kinds = requested === undefined ? SYNC_KINDS : [requested];
@@ -68,7 +76,7 @@ async function walk(kind: SyncKind): Promise<void> {
     console.log(describe(result));
 
     if (result.error !== null) {
-      throw new Error(`${kind} stopped, resume with --from ${result.next ?? "the start"}`);
+      throw new Error(`${kind} stopped, resume with: ${kind} --from ${result.next ?? "the start"}`);
     }
     if (result.next === null) {
       return;
@@ -102,12 +110,11 @@ async function backfill(kind: SyncKind, from: string | undefined): Promise<Backf
 }
 
 function describe(result: BackfillResult): string {
-  const first = result.windows[0];
-  const last = result.windows.at(-1);
-  const range = first === undefined || last === undefined ? "no windows" : `${first}..${last}`;
+  const range =
+    result.windows.length === 0 ? "no windows" : `${result.windows[0]}..${result.windows.at(-1)}`;
   const resume = result.next === null ? "done" : `next ${result.next}`;
   const line = [
-    result.kind.padEnd(13),
+    result.kind.padEnd(KIND_WIDTH),
     range.padEnd(17),
     `pages ${result.pages}`.padEnd(11),
     `rows ${result.rowsChanged}`.padEnd(12),
