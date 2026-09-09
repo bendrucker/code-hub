@@ -160,7 +160,7 @@ export async function syncContributions(
 
 // The collection takes at most a year per request, so a past year is synced
 // through its own last instant while the current one reaches only as far as the
-// moment it was read. Matches the `to` argument `fetchContributions` sends.
+// moment it was read.
 function syncedThrough(year: number, now: Date): string {
   const yearEnd = new Date(Date.UTC(year, 11, 31, 23, 59, 59));
   return (now < yearEnd ? now : yearEnd).toISOString();

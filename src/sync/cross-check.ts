@@ -1,10 +1,10 @@
 import type { ContributionsCollection } from "../github/schema";
 
 // GitHub's own yearly totals against what the event tables hold. A search
-// window that hit the silent 1,000-result cap shows up here and nowhere else,
-// which is why the design doc makes this the detector. It is recorded rather
-// than failed on: `restrictedContributionsCount` counts contributions the token
-// cannot see, so a gap can be a visibility difference instead of lost rows.
+// window that hit the silent 1,000-result cap shows up here and nowhere else.
+// It is recorded rather than failed on: `restrictedContributionsCount` counts
+// contributions the token cannot see, so a gap can be a visibility difference
+// instead of lost rows.
 export async function crossCheck(
   db: D1Database,
   year: number,
