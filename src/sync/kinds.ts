@@ -1,14 +1,18 @@
-export const SYNC_KINDS = ["pr-authored", "pr-reviewed", "issue", "contributions"] as const;
+import type { EventKind } from "../github/windows";
 
-export type SyncKind = (typeof SYNC_KINDS)[number];
+// The three search kinds come from the extraction client's own union, so a kind
+// added there breaks byKind below until this module covers it too.
+export type SyncKind = EventKind | "contributions";
 
-export function isSyncKind(value: string): value is SyncKind {
-  return SYNC_KINDS.some((kind) => kind === value);
-}
+export const SYNC_KINDS = [
+  "pr-authored",
+  "pr-reviewed",
+  "issue",
+  "contributions",
+] as const satisfies readonly SyncKind[];
 
-// Spelling the keys out is what lets the compiler check them: a kind added to
-// SYNC_KINDS widens SyncKind, and this record fails to satisfy its own return
-// type until it gains the key too.
+// Spelling the keys out is what lets the compiler check them: a record missing
+// one fails to satisfy its own return type.
 export function byKind<Value>(value: (kind: SyncKind) => Value): Record<SyncKind, Value> {
   return {
     "pr-authored": value("pr-authored"),

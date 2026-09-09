@@ -26,18 +26,24 @@ export async function handleSyncStatus(request: Request, env: Env): Promise<Resp
     return new Response("Unauthorized", { status: 401 });
   }
 
-  const [watermarks, runs, failures] = await Promise.all([
-    readWatermarks(env.DB),
-    lastRuns(env.DB),
-    recentFailures(env.DB, FAILURE_LIMIT),
-  ]);
+  try {
+    const [watermarks, runs, failures] = await Promise.all([
+      readWatermarks(env.DB),
+      lastRuns(env.DB),
+      recentFailures(env.DB, FAILURE_LIMIT),
+    ]);
 
-  const status: SyncStatus = {
-    generatedAt: new Date().toISOString(),
-    kinds: byKind((kind) => ({ watermark: watermarks[kind], lastRun: runs[kind] })),
-    failures,
-  };
-  return Response.json(status);
+    const status: SyncStatus = {
+      generatedAt: new Date().toISOString(),
+      kinds: byKind((kind) => ({ watermark: watermarks[kind], lastRun: runs[kind] })),
+      failures,
+    };
+    return Response.json(status);
+  } catch (error) {
+    // Reading this route is the first step of diagnosing a stuck sync, and a
+    // bare 500 sends the reader to the logs to find out what it was.
+    return Response.json({ error: String(error) }, { status: 500 });
+  }
 }
 
 // timingSafeEqual throws on a length mismatch, which would leak the token's

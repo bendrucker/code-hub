@@ -1,6 +1,6 @@
 import { env } from "cloudflare:test";
-import { describe, expect, it } from "vitest";
-import { finishRun, lastRuns, recentFailures, recentRuns, startRun } from "./runs";
+import { describe, expect, it, test } from "vitest";
+import { finishRun, lastRuns, recentFailures, recentRuns, startRun, type RunResult } from "./runs";
 
 const ok = { pages: 3, rowsChanged: 12, truncated: false, error: null };
 
@@ -30,44 +30,29 @@ describe("startRun", () => {
 });
 
 describe("finishRun", () => {
-  it("closes the run with what it wrote", async () => {
+  // A failed run reports the counts it reached, so both rows read back the same
+  // fields rather than treating an error as the only thing worth asserting.
+  test.each<{ name: string; result: RunResult }>([
+    { name: "a clean run", result: { pages: 2, rowsChanged: 7, truncated: true, error: null } },
+    {
+      name: "a run that gave up partway",
+      result: { pages: 1, rowsChanged: 4, truncated: false, error: "secondary rate limit" },
+    },
+  ])("closes $name with what it wrote", async ({ result }) => {
     const id = await startRun(env.DB, "issue", "2026-09-01..2026-09-08", "2026-09-09T18:00:00Z");
 
-    await finishRun(
-      env.DB,
-      id,
-      { pages: 2, rowsChanged: 7, truncated: true, error: null },
-      "2026-09-09T18:01:00Z",
-    );
+    await finishRun(env.DB, id, result, "2026-09-09T18:01:00Z");
 
-    const [run] = await recentRuns(env.DB, "issue", 10);
-    expect(run).toEqual({
-      id,
-      kind: "issue",
-      window: "2026-09-01..2026-09-08",
-      startedAt: "2026-09-09T18:00:00Z",
-      finishedAt: "2026-09-09T18:01:00Z",
-      pages: 2,
-      rowsChanged: 7,
-      truncated: true,
-      error: null,
-    });
-  });
-
-  it("keeps the counts a failed run reached", async () => {
-    const id = await startRun(env.DB, "issue", "2026-09-01..2026-09-08", "2026-09-09T18:00:00Z");
-
-    await finishRun(
-      env.DB,
-      id,
-      { pages: 1, rowsChanged: 4, truncated: false, error: "secondary rate limit" },
-      "2026-09-09T18:01:00Z",
-    );
-
-    const [run] = await recentRuns(env.DB, "issue", 10);
-    expect(run?.pages).toBe(1);
-    expect(run?.rowsChanged).toBe(4);
-    expect(run?.error).toBe("secondary rate limit");
+    expect(await recentRuns(env.DB, "issue", 10)).toEqual([
+      {
+        id,
+        kind: "issue",
+        window: "2026-09-01..2026-09-08",
+        startedAt: "2026-09-09T18:00:00Z",
+        finishedAt: "2026-09-09T18:01:00Z",
+        ...result,
+      },
+    ]);
   });
 });
 

@@ -1,8 +1,10 @@
-import { byKind, isSyncKind, SYNC_KINDS, type SyncKind } from "./kinds";
+import { byKind, SYNC_KINDS, type SyncKind } from "./kinds";
 
 export interface SyncRun {
   id: number;
-  kind: SyncKind;
+  // A write takes a SyncKind, but the column has no CHECK constraint, so a run
+  // written before a kind was renamed still reads back under its old name.
+  kind: string;
   window: string;
   startedAt: string;
   finishedAt: string | null;
@@ -70,14 +72,11 @@ export async function lastRuns(db: D1Database): Promise<Record<SyncKind, SyncRun
   );
   const results = await db.batch<RunRow>(SYNC_KINDS.map((kind) => statement.bind(kind)));
 
-  const latest = new Map<string, SyncRun>();
-  for (const { results: rows } of results) {
-    for (const row of rows) {
-      const run = toRun(row);
-      latest.set(run.kind, run);
-    }
-  }
-  return byKind((kind) => latest.get(kind) ?? null);
+  // batch answers in the order it was given, so each kind reads its own result.
+  return byKind((kind) => {
+    const row = results[SYNC_KINDS.indexOf(kind)]?.results[0];
+    return row === undefined ? null : toRun(row);
+  });
 }
 
 export async function recentRuns(
@@ -101,9 +100,6 @@ export async function recentFailures(db: D1Database, limit: number): Promise<Syn
 }
 
 function toRun(row: RunRow): SyncRun {
-  if (!isSyncKind(row.kind)) {
-    throw new Error(`sync run ${row.id} has unknown kind ${row.kind}`);
-  }
   return {
     id: row.id,
     kind: row.kind,
