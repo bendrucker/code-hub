@@ -127,8 +127,6 @@ async function selectFetch(
   let newest: SearchFetch | null = null;
   let candidate = candidates.pop();
 
-  // A cursor loop rather than for...of: a fetch is read only because the one
-  // after it turned out to be incomplete.
   while (candidate !== undefined) {
     // eslint-disable-next-line no-await-in-loop
     const fetch = await readFetch(bucket, kind, prefix, candidate);
@@ -225,8 +223,6 @@ async function list(bucket: R2Bucket, options: R2ListOptions): Promise<Listing> 
   let cursor: string | undefined;
   let remaining = true;
 
-  // A cursor loop rather than for...of: each page of the listing depends on the
-  // cursor the one before it returned.
   while (remaining) {
     // eslint-disable-next-line no-await-in-loop
     const listed = await bucket.list({ ...options, cursor });
