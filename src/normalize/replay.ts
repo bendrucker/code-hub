@@ -129,12 +129,12 @@ async function selectFetch(
 
   while (candidate !== undefined) {
     // eslint-disable-next-line no-await-in-loop
-    const fetch = await readFetch(bucket, kind, prefix, candidate);
-    if (fetch.complete) {
-      return fetch;
+    const archived = await readFetch(bucket, kind, prefix, candidate);
+    if (archived.complete) {
+      return archived;
     }
 
-    newest ??= fetch;
+    newest ??= archived;
     candidate = candidates.pop();
   }
 
@@ -159,13 +159,13 @@ function searchFetch(kind: EventKind, pages: readonly RawPage[]): Omit<SearchFet
       const parsed = pages.map((page) => parse(pullRequestSearchPage, page));
       return {
         nodes: { kind, nodes: parsed.flatMap((page) => page.search.nodes) },
-        ...shape(pages, parsed),
+        ...coverage(pages, parsed),
       };
     }
     case "pr-reviewed": {
       const parsed = pages.map((page) => parse(reviewedPullRequestSearchPage, page));
       const nodes = parsed.flatMap((page) => page.search.nodes);
-      const { complete, truncated } = shape(pages, parsed);
+      const { complete, truncated } = coverage(pages, parsed);
       return {
         nodes: { kind, nodes },
         complete,
@@ -178,13 +178,13 @@ function searchFetch(kind: EventKind, pages: readonly RawPage[]): Omit<SearchFet
       const parsed = pages.map((page) => parse(issueSearchPage, page));
       return {
         nodes: { kind, nodes: parsed.flatMap((page) => page.search.nodes) },
-        ...shape(pages, parsed),
+        ...coverage(pages, parsed),
       };
     }
   }
 }
 
-function shape(
+function coverage(
   pages: readonly RawPage[],
   parsed: readonly SearchPage<unknown>[],
 ): { complete: boolean; truncated: boolean } {
