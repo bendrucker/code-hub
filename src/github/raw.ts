@@ -12,7 +12,7 @@ export function searchPrefix(kind: EventKind, window: string): string {
   return `raw/search/${kind}/${window}/`;
 }
 
-export function searchFetchPrefix(kind: EventKind, window: string, fetchedAt: string): string {
+function searchFetchPrefix(kind: EventKind, window: string, fetchedAt: string): string {
   return `${searchPrefix(kind, window)}${fetchedAt}/`;
 }
 
@@ -24,6 +24,18 @@ export function searchKey(
 ): string {
   const name = String(page).padStart(PAGE_DIGITS, "0");
   return `${searchFetchPrefix(kind, window, fetchedAt)}${name}${OBJECT_SUFFIX}`;
+}
+
+// Replay counts a fetch's pages against the highest one it archived, so the
+// number `searchKey` padded has to read back off a listed key.
+export function searchPageNumber(key: string): number | null {
+  if (!key.endsWith(OBJECT_SUFFIX)) {
+    return null;
+  }
+
+  const name = key.slice(key.lastIndexOf("/") + 1, -OBJECT_SUFFIX.length);
+
+  return /^\d+$/.test(name) ? Number(name) : null;
 }
 
 export function contributionsPrefix(year: number): string {

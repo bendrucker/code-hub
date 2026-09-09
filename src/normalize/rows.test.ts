@@ -8,6 +8,8 @@ import {
   review,
   reviewedPullRequest,
 } from "../../test/github-fixtures";
+import type { Repository as RepositoryNode } from "../github/schema";
+import type { Repository } from "../store";
 import { contributionRows, issueRows, pullRequestRows, repositoryRow, reviewRows } from "./rows";
 
 const FETCHED_AT = "2026-09-09T12:00:00.000Z";
@@ -30,25 +32,24 @@ describe("repositoryRow", () => {
     });
   });
 
-  it("flattens a missing primary language into both of its columns", () => {
-    const row = repositoryRow(repository("code-hub", { primaryLanguage: null }), FETCHED_AT);
-
-    expect(row.primaryLanguage).toBeNull();
-    expect(row.primaryLanguageColor).toBeNull();
-  });
-
-  it("carries a language that has no color", () => {
-    const node = repository("code-hub", { primaryLanguage: { name: "Nix", color: null } });
-    const row = repositoryRow(node, FETCHED_AT);
-
-    expect(row.primaryLanguage).toBe("Nix");
-    expect(row.primaryLanguageColor).toBeNull();
-  });
-
-  it("keeps a null description", () => {
-    expect(
-      repositoryRow(repository("x", { description: null }), FETCHED_AT).description,
-    ).toBeNull();
+  it.each<{ name: string; node: RepositoryNode; expected: Partial<Repository> }>([
+    {
+      name: "flattens a missing primary language into both of its columns",
+      node: repository("code-hub", { primaryLanguage: null }),
+      expected: { primaryLanguage: null, primaryLanguageColor: null },
+    },
+    {
+      name: "carries a language that has no color",
+      node: repository("code-hub", { primaryLanguage: { name: "Nix", color: null } }),
+      expected: { primaryLanguage: "Nix", primaryLanguageColor: null },
+    },
+    {
+      name: "keeps a null description",
+      node: repository("code-hub", { description: null }),
+      expected: { description: null },
+    },
+  ])("$name", ({ node, expected }) => {
+    expect(repositoryRow(node, FETCHED_AT)).toMatchObject(expected);
   });
 });
 

@@ -32,7 +32,7 @@ export interface ContributionsResult {
 // than a page of days in one year returns only the first page.
 // `totalRepositoriesWithContributedCommits` is the count to cross-check the
 // first against.
-function truncated(collection: ContributionsCollection): boolean {
+export function contributionsTruncated(collection: ContributionsCollection): boolean {
   return (
     collection.commitContributionsByRepository.length >= MAX_REPOSITORIES ||
     collection.commitContributionsByRepository.some(
@@ -75,7 +75,7 @@ export async function fetchContributions(
   return {
     year,
     collection,
-    truncated: truncated(collection),
+    truncated: contributionsTruncated(collection),
     rateLimit: response.rateLimit,
     body: response.body,
   };

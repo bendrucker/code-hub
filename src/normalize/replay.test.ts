@@ -5,11 +5,15 @@ import {
   issue,
   pullRequest,
   repository,
+  review,
   reviewedPullRequest,
+  type SearchOverrides,
   searchPayload,
 } from "../../test/github-fixtures";
 import { readRow } from "../../test/tables";
+import { NESTED_PAGE_SIZE } from "../github/queries";
 import { contributionsKey, searchKey } from "../github/raw";
+import { SEARCH_MAX_RESULTS } from "../github/search";
 import type { EventKind } from "../github/windows";
 import {
   MissingRawObjectError,
@@ -34,10 +38,11 @@ function archive(
   fetchedAt: string,
   page: number,
   nodes: readonly unknown[],
+  overrides: SearchOverrides = {},
 ): Promise<unknown> {
   return env.RAW.put(
     searchKey(kind, WINDOW, fetchedAt, page),
-    JSON.stringify(searchPayload(nodes)),
+    JSON.stringify(searchPayload(nodes, overrides)),
   );
 }
 
@@ -81,18 +86,24 @@ describe("replaySearchWindow", () => {
     expect(stored?.id).toBe("I_2");
   });
 
-  it("reads every page of the fetch in key order", async () => {
-    await archive("issue", LATER, 2, [issue(2)]);
-    await archive("issue", LATER, 10, [issue(10)]);
-    await archive("issue", LATER, 1, [issue(1)]);
+  it("applies a fetch's pages in key order", async () => {
+    await Promise.all([
+      archive("issue", LATER, 1, [issue(1, { title: "the first page" })]),
+      ...[2, 3, 4, 5, 6, 7, 8, 9].map((page) => archive("issue", LATER, page, [issue(page)])),
+      archive("issue", LATER, 10, [issue(1, { title: "the tenth page" })]),
+    ]);
 
-    const replayed = await replaySearchWindow(env.DB, env.RAW, "issue", WINDOW);
+    await replaySearchWindow(env.DB, env.RAW, "issue", WINDOW);
 
-    expect(replayed?.rows.issues).toBe(3);
-    const { results } = await env.DB.prepare("SELECT id FROM issues ORDER BY number").all<{
-      id: string;
-    }>();
-    expect(results.map((row) => row.id)).toEqual(["I_1", "I_2", "I_10"]);
+    expect(await count("issues")).toEqual({ total: 9 });
+    const stored = await readRow<{ title: string }>(
+      env.DB,
+      "SELECT title FROM issues WHERE id = ?",
+      "I_1",
+    );
+    // The last write wins only because a padded 10 sorts after 1 rather than
+    // between 1 and 2.
+    expect(stored?.title).toBe("the tenth page");
   });
 
   it("writes one repository for a window that names it on every page", async () => {
@@ -142,28 +153,84 @@ describe("replaySearchWindow", () => {
     });
   });
 
+  it("walks back to the last fetch that finished paginating", async () => {
+    await archive("issue", EARLIER, 1, [issue(1)]);
+    // Interrupted after its first page: the cursor it announced was never
+    // followed, so the newer fetch holds a fraction of the window.
+    await archive("issue", LATER, 1, [issue(2)], { endCursor: "Y3Vyc29yCg" });
+
+    const replayed = await replaySearchWindow(env.DB, env.RAW, "issue", WINDOW);
+
+    expect(replayed?.fetchedAt).toBe(EARLIER);
+    const stored = await readRow<{ id: string }>(env.DB, "SELECT id FROM issues");
+    expect(stored?.id).toBe("I_1");
+  });
+
+  it("skips a fetch that lost a page between its first and its last", async () => {
+    await archive("issue", EARLIER, 1, [issue(1)]);
+    await archive("issue", LATER, 1, [issue(2)]);
+    await archive("issue", LATER, 3, [issue(3)]);
+
+    const replayed = await replaySearchWindow(env.DB, env.RAW, "issue", WINDOW);
+
+    expect(replayed?.fetchedAt).toBe(EARLIER);
+  });
+
+  it("replays the newest fetch when none of them finished", async () => {
+    await archive("issue", EARLIER, 1, [issue(1)], { endCursor: "ZWFybGllcgo" });
+    await archive("issue", LATER, 1, [issue(2)], { endCursor: "bGF0ZXIK" });
+
+    const replayed = await replaySearchWindow(env.DB, env.RAW, "issue", WINDOW);
+
+    expect(replayed?.fetchedAt).toBe(LATER);
+  });
+
+  it("reports a window whose match count hit the search cap", async () => {
+    await archive("pr-authored", LATER, 1, [pullRequest(1)], { issueCount: SEARCH_MAX_RESULTS });
+
+    const replayed = await replaySearchWindow(env.DB, env.RAW, "pr-authored", WINDOW);
+
+    expect(replayed?.truncated).toBe(true);
+  });
+
+  it("reports a pull request whose reviews outran their one page", async () => {
+    const node = reviewedPullRequest(7, {
+      reviews: { totalCount: NESTED_PAGE_SIZE + 1, nodes: [review(7)] },
+    });
+    await archive("pr-reviewed", LATER, 1, [node]);
+
+    const replayed = await replaySearchWindow(env.DB, env.RAW, "pr-reviewed", WINDOW);
+
+    expect(replayed?.truncated).toBe(true);
+  });
+
+  it("reports a window GitHub returned whole", async () => {
+    await archive("pr-reviewed", LATER, 1, [reviewedPullRequest(7)]);
+
+    const replayed = await replaySearchWindow(env.DB, env.RAW, "pr-reviewed", WINDOW);
+
+    expect(replayed?.truncated).toBe(false);
+  });
+
   it("reports a window nothing was archived under", async () => {
     await expect(replaySearchWindow(env.DB, env.RAW, "issue", "2011-01")).resolves.toBeNull();
   });
 
-  it("names the key in the error when a body no longer validates", async () => {
-    const key = searchKey("pr-authored", WINDOW, LATER, 1);
-    await env.RAW.put(key, JSON.stringify(searchPayload([{ ...pullRequest(1), additions: "10" }])));
+  it.each<{ name: string; kind: EventKind; body: string }>([
+    {
+      name: "a body no longer validates",
+      kind: "pr-authored",
+      body: JSON.stringify(searchPayload([{ ...pullRequest(1), additions: "10" }])),
+    },
+    { name: "a body is not JSON", kind: "issue", body: "<html>502</html>" },
+  ])("names the key when $name", async ({ kind, body }) => {
+    const key = searchKey(kind, WINDOW, LATER, 1);
+    await env.RAW.put(key, body);
 
-    const replay = replaySearchWindow(env.DB, env.RAW, "pr-authored", WINDOW);
+    const replay = replaySearchWindow(env.DB, env.RAW, kind, WINDOW);
 
     await expect(replay).rejects.toThrow(RawValidationError);
     await expect(replay).rejects.toMatchObject({ key });
-  });
-
-  it("names the key when a body is not JSON", async () => {
-    const key = searchKey("issue", WINDOW, LATER, 1);
-    await env.RAW.put(key, "<html>502</html>");
-
-    await expect(replaySearchWindow(env.DB, env.RAW, "issue", WINDOW)).rejects.toMatchObject({
-      key,
-      name: "RawValidationError",
-    });
   });
 
   it("reports a window whose objects were deleted", async () => {
@@ -186,7 +253,17 @@ describe("replayContributions", () => {
 
     expect(replayed?.fetchedAt).toBe(LATER);
     expect(replayed?.rows.commitDays).toBe(3);
+    expect(replayed?.truncated).toBe(false);
     expect(await count("repositories")).toEqual({ total: 3 });
+  });
+
+  it("reports a repository that committed on more days than one page holds", async () => {
+    const body = JSON.stringify(contributionsPayload(1, NESTED_PAGE_SIZE + 1));
+    await env.RAW.put(contributionsKey(2026, LATER), body);
+
+    const replayed = await replayContributions(env.DB, env.RAW, 2026);
+
+    expect(replayed?.truncated).toBe(true);
   });
 
   it("reports a year nothing was archived under", async () => {

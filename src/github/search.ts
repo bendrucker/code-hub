@@ -19,7 +19,7 @@ export const SEARCH_PAGE_SIZE = 100;
 // is the only signal there is short of the contributions cross-check.
 export const SEARCH_MAX_RESULTS = 1000;
 
-const MAX_PAGES = SEARCH_MAX_RESULTS / SEARCH_PAGE_SIZE;
+export const SEARCH_MAX_PAGES = SEARCH_MAX_RESULTS / SEARCH_PAGE_SIZE;
 
 export interface SearchPageResult<T> {
   page: number;
@@ -51,7 +51,7 @@ async function* searchPages<T>(options: DocumentOptions<T>): AsyncGenerator<Sear
   // page bound is the second stop: GitHub rejects a cursor past the 1,000th
   // result, so a window that keeps announcing successors ends here rather than
   // on that error.
-  while (remaining && page < MAX_PAGES) {
+  while (remaining && page < SEARCH_MAX_PAGES) {
     // eslint-disable-next-line no-await-in-loop
     const response = await graphql(
       options.token,
