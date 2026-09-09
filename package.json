@@ -12,6 +12,9 @@
     "dev": "wrangler dev",
     "wrangler": "wrangler"
   },
+  "dependencies": {
+    "zod": "^4.5.4"
+  },
   "devDependencies": {
     "@ast-grep/cli": "^0.45.3",
     "@cloudflare/vitest-pool-workers": "^0.22.0",

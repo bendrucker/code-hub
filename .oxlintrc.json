@@ -6,6 +6,10 @@
     "suspicious": "error",
     "perf": "error"
   },
+  "rules": {
+    // `__typename` is GraphQL's own meta field, so the name is GitHub's.
+    "no-underscore-dangle": ["error", { "allow": ["__typename"] }]
+  },
   "overrides": [
     {
       // Test helpers live in the describe block they serve, and awaiting a
