@@ -26,6 +26,21 @@ Deploys are not wired up. The repository has no `CLOUDFLARE_API_TOKEN` secret, s
 
 Change Cloudflare resources (R2 buckets, D1 databases, cron triggers, secrets) through `wrangler.jsonc` plus the `wrangler` CLI, never through the Cloudflare dashboard. Dashboard edits drift from what's committed and get silently overwritten on the next deploy.
 
+## Sync
+
+The hourly cron runs one `updated:>` search per event kind plus `contributionsCollection` for the current year. Each search window opens an hour behind that kind's watermark, which covers the lag between a write on GitHub and its appearance in the search index. Kinds run one after another, so the first to reach the rate-limit floor ends the invocation instead of the other two spending their way to the same discovery.
+
+A watermark is an ISO instant meaning synced through, and it moves only after every page is in R2 and every row is in D1. It moves forward only, so a backfill of 2013 cannot rewind a caught-up kind. A kind with no watermark is skipped, because anchoring at now would declare the whole history synced.
+
+Backfill sets the first watermark and fills what the cron never saw:
+
+```sh
+curl -X POST -H "Authorization: Bearer $ADMIN_TOKEN" \
+  "$WORKER/admin/backfill?kind=pr-authored&from=2012-12"
+```
+
+One call walks `BACKFILL_WINDOWS` monthly windows and answers with `next`, which is the `from` for the call after it and null once the walk reaches the present. `kind=contributions` walks the years `contributionYears` reports rather than months, and reads the year out of `from`. 2012-12 is the earliest month that can match.
+
 ## Secrets
 
-Worker secrets are set with `wrangler secret put`, never committed. `wrangler dev` reads them from `.dev.vars`, which is gitignored. `GITHUB_TOKEN` will be the first: the GraphQL and search APIs both need it, and it sees private repositories, so what the feed publishes about them is a decision the ingest path owns. `ADMIN_TOKEN` guards `GET /admin/sync`, and the route answers 404 while it is unset so an unconfigured deployment has no admin surface. Public, non-sensitive identifiers belong in `wrangler.jsonc` as `vars`.
+Worker secrets are set with `wrangler secret put`, never committed. `wrangler dev` reads them from `.dev.vars`, which is gitignored. `GITHUB_TOKEN` signs every GraphQL and search request, and it sees private repositories, so what the feed publishes about them is a decision the ingest path owns. `ADMIN_TOKEN` guards `/admin/sync` and `/admin/backfill`, and both answer 404 while it is unset so an unconfigured deployment has no admin surface. Public, non-sensitive identifiers belong in `wrangler.jsonc` as `vars`: `GITHUB_LOGIN` is whose history the hub reads, and `BACKFILL_WINDOWS` is how many windows one backfill call walks.

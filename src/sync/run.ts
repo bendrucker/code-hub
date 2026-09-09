@@ -1,0 +1,257 @@
+import { GitHubResponseError, type GraphQLOptions, RateLimitExhausted } from "../github/client";
+import { contributionsTruncated, fetchContributions } from "../github/contributions";
+import { archiveContributions, archiveSearchPage } from "../github/raw";
+import {
+  issuePages,
+  pullRequestPages,
+  reviewedPullRequestPages,
+  type SearchPageResult,
+} from "../github/search";
+import type { ContributionsCollection } from "../github/schema";
+import type { EventKind } from "../github/windows";
+import {
+  normalizeContributions,
+  normalizeSearchPage,
+  type RowsChanged,
+  type SearchPageNodes,
+} from "../normalize";
+import { crossCheck } from "./cross-check";
+import { finishRun, type RunResult, startRun } from "./runs";
+import { advance } from "./state";
+
+export class MissingSecretError extends Error {
+  constructor(name: string) {
+    super(`${name} is not configured`);
+    this.name = "MissingSecretError";
+  }
+}
+
+export function githubToken(env: Env): string {
+  const token = env.GITHUB_TOKEN;
+  if (token === undefined || token === "") {
+    throw new MissingSecretError("GITHUB_TOKEN");
+  }
+  return token;
+}
+
+export interface SearchWindow {
+  // What `sync_runs` records and what names the window's prefix in R2: a month
+  // key for a backfill, the anchor instant for an incremental window.
+  key: string;
+  query: string;
+  // The instant the window leaves synced. The watermark takes it once every
+  // page is in R2 and every row is in D1.
+  through: string;
+}
+
+export interface SyncOptions extends GraphQLOptions {
+  now?: Date;
+}
+
+export interface SyncResult extends RunResult {
+  // The budget belongs to the token rather than to this window, so a caller
+  // holding more windows stops instead of spending each one's first request
+  // rediscovering the floor.
+  exhausted: boolean;
+}
+
+const CLEAN: RunResult = {
+  pages: 0,
+  rowsChanged: 0,
+  truncated: false,
+  error: null,
+  note: null,
+};
+
+export async function syncWindow(
+  env: Env,
+  kind: EventKind,
+  window: SearchWindow,
+  options: SyncOptions = {},
+): Promise<SyncResult> {
+  const fetchedAt = (options.now ?? new Date()).toISOString();
+  const id = await startRun(env.DB, kind, window.key, fetchedAt);
+  let result = CLEAN;
+  let exhausted = false;
+
+  try {
+    const pages = searchPages(kind, {
+      ...options,
+      token: githubToken(env),
+      login: env.GITHUB_LOGIN,
+      searchQuery: window.query,
+    });
+
+    // The pages arrive one at a time because each request needs the cursor the
+    // response before it returned, and each one is archived before its rows are
+    // written so a normalization bug stays diagnosable against the bytes.
+    let page = await pages.next();
+    while (page.done !== true) {
+      // eslint-disable-next-line no-await-in-loop
+      result = await ingest(env, kind, window, fetchedAt, page.value, result);
+      // eslint-disable-next-line no-await-in-loop
+      page = await pages.next();
+    }
+  } catch (error) {
+    result = { ...result, error: describe(error) };
+    exhausted = error instanceof RateLimitExhausted;
+    await archiveFailure(env.RAW, kind, window, fetchedAt, result.pages + 1, error);
+  } finally {
+    await finishRun(env.DB, id, result);
+  }
+
+  if (result.error === null) {
+    await advance(env.DB, kind, window.through);
+  }
+
+  return { ...result, exhausted };
+}
+
+export interface ContributionsRun extends SyncResult {
+  // The years GitHub says it holds contributions for, which is what a backfill
+  // walks rather than a range it picks itself.
+  contributionYears: number[];
+}
+
+export async function syncContributions(
+  env: Env,
+  year: number,
+  options: SyncOptions = {},
+): Promise<ContributionsRun> {
+  const now = options.now ?? new Date();
+  const fetchedAt = now.toISOString();
+  const id = await startRun(env.DB, "contributions", String(year), fetchedAt);
+  let result = CLEAN;
+  let exhausted = false;
+  let collection: ContributionsCollection | null = null;
+
+  try {
+    const fetched = await fetchContributions(githubToken(env), env.GITHUB_LOGIN, year, {
+      ...options,
+      now,
+    });
+    collection = fetched.collection;
+
+    await archiveContributions(env.RAW, { year, fetchedAt, body: fetched.body });
+    const changed = await normalizeContributions(env.DB, fetched.collection, fetchedAt);
+
+    result = {
+      pages: 1,
+      rowsChanged: total(changed),
+      truncated: contributionsTruncated(fetched.collection),
+      error: null,
+      note: await crossCheck(env.DB, year, fetched.collection),
+    };
+  } catch (error) {
+    result = { ...result, error: describe(error) };
+    exhausted = error instanceof RateLimitExhausted;
+    if (error instanceof GitHubResponseError) {
+      await archiveContributions(env.RAW, { year, fetchedAt, body: error.body });
+    }
+  } finally {
+    await finishRun(env.DB, id, result);
+  }
+
+  if (result.error === null) {
+    await advance(env.DB, "contributions", syncedThrough(year, now));
+  }
+
+  return { ...result, exhausted, contributionYears: collection?.contributionYears ?? [] };
+}
+
+// The collection takes at most a year per request, so a past year is synced
+// through its own last instant while the current one reaches only as far as the
+// moment it was read. Matches the `to` argument `fetchContributions` sends.
+function syncedThrough(year: number, now: Date): string {
+  const yearEnd = new Date(Date.UTC(year, 11, 31, 23, 59, 59));
+  return (now < yearEnd ? now : yearEnd).toISOString();
+}
+
+interface Page {
+  page: number;
+  body: string;
+  truncated: boolean;
+  nodes: SearchPageNodes;
+}
+
+async function ingest(
+  env: Env,
+  kind: EventKind,
+  window: SearchWindow,
+  fetchedAt: string,
+  page: Page,
+  result: RunResult,
+): Promise<RunResult> {
+  await archiveSearchPage(env.RAW, {
+    kind,
+    window: window.key,
+    fetchedAt,
+    page: page.page,
+    body: page.body,
+  });
+  const changed = await normalizeSearchPage(env.DB, page.nodes, fetchedAt);
+
+  return {
+    ...result,
+    pages: page.page,
+    rowsChanged: result.rowsChanged + total(changed),
+    truncated: result.truncated || page.truncated,
+  };
+}
+
+// Every failure carrying bytes carries the ones that broke the run, and the
+// page it would have been is the next one the window never got to.
+function archiveFailure(
+  bucket: R2Bucket,
+  kind: EventKind,
+  window: SearchWindow,
+  fetchedAt: string,
+  page: number,
+  error: unknown,
+): Promise<unknown> {
+  if (!(error instanceof GitHubResponseError)) {
+    return Promise.resolve(null);
+  }
+  return archiveSearchPage(bucket, { kind, window: window.key, fetchedAt, page, body: error.body });
+}
+
+interface PagerOptions extends GraphQLOptions {
+  token: string;
+  login: string;
+  searchQuery: string;
+}
+
+// One switch on the kind, so the nodes a pager yields keep the tie to the kind
+// that produced them and `normalizeSearchPage` needs no cast to recover it.
+function searchPages(kind: EventKind, options: PagerOptions): AsyncGenerator<Page> {
+  switch (kind) {
+    case "pr-authored":
+      return kinded(pullRequestPages(options), (nodes) => ({ kind, nodes }));
+    case "pr-reviewed":
+      return kinded(reviewedPullRequestPages(options), (nodes) => ({ kind, nodes }));
+    case "issue":
+      return kinded(issuePages(options), (nodes) => ({ kind, nodes }));
+  }
+}
+
+async function* kinded<Node>(
+  source: AsyncGenerator<SearchPageResult<Node>>,
+  toNodes: (nodes: Node[]) => SearchPageNodes,
+): AsyncGenerator<Page> {
+  for await (const result of source) {
+    yield {
+      page: result.page,
+      body: result.body,
+      truncated: result.truncated,
+      nodes: toNodes(result.nodes),
+    };
+  }
+}
+
+function total(changed: RowsChanged): number {
+  return Object.values(changed).reduce((sum, count) => sum + count, 0);
+}
+
+function describe(error: unknown): string {
+  return error instanceof Error ? `${error.name}: ${error.message}` : String(error);
+}

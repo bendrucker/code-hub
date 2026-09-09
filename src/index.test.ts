@@ -1,5 +1,15 @@
-import { SELF } from "cloudflare:test";
-import { describe, expect, it } from "vitest";
+import { createScheduledController, env, SELF } from "cloudflare:test";
+import { afterEach, describe, expect, it, vi } from "vitest";
+import { stubFetch } from "../test/fetch-stub";
+import {
+  contributionsPayload,
+  jsonResponse,
+  requestBody,
+  searchPayload,
+} from "../test/github-fixtures";
+import worker from "./index";
+import { recentRuns } from "./sync/runs";
+import { advance } from "./sync/state";
 
 describe("fetch", () => {
   it("reports health", async () => {
@@ -19,5 +29,38 @@ describe("fetch", () => {
     const response = await SELF.fetch("https://code-hub.test/");
 
     expect(response.status).toBe(404);
+  });
+});
+
+describe("scheduled", () => {
+  afterEach(() => {
+    vi.unstubAllGlobals();
+    delete env.GITHUB_TOKEN;
+  });
+
+  it("runs the incremental sync on the cron", async () => {
+    env.GITHUB_TOKEN = "token";
+    await advance(env.DB, "issue", "2026-09-09T10:00:00.000Z", "2026-09-09T10:00:00Z");
+    const { fetch, requests } = stubFetch(async (request) => {
+      const { variables } = await requestBody(request.clone());
+      return variables.searchQuery === undefined
+        ? jsonResponse(contributionsPayload(0))
+        : jsonResponse(searchPayload([]));
+    });
+    vi.stubGlobal("fetch", fetch);
+
+    await worker.scheduled(createScheduledController({ cron: "0 * * * *" }), env);
+
+    expect(requests).toHaveLength(2);
+    expect(await recentRuns(env.DB, "issue", 1)).toMatchObject([{ pages: 1, error: null }]);
+    expect(await recentRuns(env.DB, "contributions", 1)).toMatchObject([{ error: null }]);
+  });
+
+  it("writes no run while the GitHub token is unset", async () => {
+    await advance(env.DB, "issue", "2026-09-09T10:00:00.000Z", "2026-09-09T10:00:00Z");
+
+    await worker.scheduled(createScheduledController({ cron: "0 * * * *" }), env);
+
+    expect(await recentRuns(env.DB, "issue", 1)).toEqual([]);
   });
 });

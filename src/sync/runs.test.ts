@@ -2,7 +2,7 @@ import { env } from "cloudflare:test";
 import { describe, expect, it, test } from "vitest";
 import { finishRun, lastRuns, recentFailures, recentRuns, startRun, type RunResult } from "./runs";
 
-const ok = { pages: 3, rowsChanged: 12, truncated: false, error: null };
+const ok = { pages: 3, rowsChanged: 12, truncated: false, error: null, note: null };
 
 describe("startRun", () => {
   it("records a run that has not finished", async () => {
@@ -24,6 +24,7 @@ describe("startRun", () => {
         rowsChanged: 0,
         truncated: false,
         error: null,
+        note: null,
       },
     ]);
   });
@@ -33,10 +34,19 @@ describe("finishRun", () => {
   // A failed run reports the counts it reached, so both rows read back the same
   // fields rather than treating an error as the only thing worth asserting.
   test.each<{ name: string; result: RunResult }>([
-    { name: "a clean run", result: { pages: 2, rowsChanged: 7, truncated: true, error: null } },
+    {
+      name: "a clean run",
+      result: { pages: 2, rowsChanged: 7, truncated: true, error: null, note: null },
+    },
     {
       name: "a run that gave up partway",
-      result: { pages: 1, rowsChanged: 4, truncated: false, error: "secondary rate limit" },
+      result: {
+        pages: 1,
+        rowsChanged: 4,
+        truncated: false,
+        error: "secondary rate limit",
+        note: null,
+      },
     },
   ])("closes $name with what it wrote", async ({ result }) => {
     const id = await startRun(env.DB, "issue", "2026-09-01..2026-09-08", "2026-09-09T18:00:00Z");

@@ -58,20 +58,37 @@ One row per event, at the grain GitHub hands over without crawling each reposito
 
 A sync state table alongside these records the last window read per event type. Commits are daily counts because that is how `contributionsCollection` already exposes them. Per-commit history, comment bodies, and individual review comments stay out of the first version. Each one needs a walk of every PR in every repository, and per-PR counts give most of the analytics value at a hundredth of the requests.
 
+## Sync
+
+The hourly cron runs one `updated:>` search per event kind plus `contributionsCollection` for the current year. Each search window opens an hour behind that kind's watermark, since GitHub's search index lags writes and upserts keyed on node ID make the overlap free. Kinds run one after another so the first to reach the rate-limit floor ends the invocation.
+
+A watermark is an ISO instant meaning synced through. It advances only after every page is in R2 and every row is in D1, and only forward, so a backfill of an old month cannot rewind a caught-up kind. A kind with no watermark is skipped: a backfill sets the first one.
+
+Backfill runs from an admin route against the same code path, paged so no invocation runs past its subrequest budget:
+
+```sh
+curl -X POST -H "Authorization: Bearer $ADMIN_TOKEN" \
+  "$WORKER/admin/backfill?kind=pr-authored&from=2012-12"
+```
+
+One call walks `BACKFILL_WINDOWS` monthly windows and answers with `next`, the `from` the following call resumes at. `next` is null once the walk reaches the present. `kind=contributions` walks the years `contributionYears` reports and reads its year out of `from`.
+
+Each contributions year is checked against the event tables for that year. A disagreement lands on the run as a note rather than an error, because a silently truncated search window and a contribution the token cannot see look the same from here. `GET /admin/sync` reports it alongside the watermarks and the last ten failures.
+
 ## Secrets
 
-| Secret         | Location                              | Consumer                     |
-| -------------- | ------------------------------------- | ---------------------------- |
-| `GITHUB_TOKEN` | Worker secret (`wrangler secret put`) | Every GitHub GraphQL request |
-| `ADMIN_TOKEN`  | Worker secret (`wrangler secret put`) | Bearer auth on `/admin/sync` |
+| Secret         | Location                              | Consumer                        |
+| -------------- | ------------------------------------- | ------------------------------- |
+| `GITHUB_TOKEN` | Worker secret (`wrangler secret put`) | Every GitHub GraphQL request    |
+| `ADMIN_TOKEN`  | Worker secret (`wrangler secret put`) | Bearer auth on the admin routes |
 
 The GitHub token's scope decides what the hub can see. What it publishes is a separate question, still open in [docs/design.md](docs/design.md).
 
-`ADMIN_TOKEN` is optional. `/admin/sync` answers 404 while it is unset. A deployment that never sets one exposes no admin surface.
+`ADMIN_TOKEN` is optional. `/admin/sync` and `/admin/backfill` answer 404 while it is unset. A deployment that never sets one exposes no admin surface.
 
 ## Infrastructure
 
-`wrangler.jsonc` owns the Worker, the `DB` D1 binding, the `RAW` and `LAKE` R2 bindings for `code-hub-raw` and `activity-hub-lake`, and the hourly cron trigger. The service binding to the site joins them when publishing lands. Migrations apply to production D1 from CI on merge to `main`.
+`wrangler.jsonc` owns the Worker, the `DB` D1 binding, the `RAW` and `LAKE` R2 bindings for `code-hub-raw` and `activity-hub-lake`, the hourly cron trigger, and two public vars: `GITHUB_LOGIN` for whose history the hub reads and `BACKFILL_WINDOWS` for how many windows one backfill call walks. The service binding to the site joins them when publishing lands. Migrations apply to production D1 from CI on merge to `main`.
 
 There is no Terraform here. Activity Hub needs it for a DNS record, a Workers route, and the Cloudflare Access applications in front of its admin routes. This hub is reached by cron and by a service binding. It has no hostname to manage. `/admin/sync` sits behind `ADMIN_TOKEN` alone, with no Access application in front of it.
 
@@ -93,4 +110,4 @@ bun run dev
 
 ## Status
 
-Scaffold only. Nothing is deployed, no extraction code exists, and bendrucker.me still runs its own GitHub sync. The open decisions in [docs/design.md](docs/design.md) come before the first query.
+Extraction, normalization, and the sync loop are written. Nothing is deployed, no D1 migration has been applied to production, and bendrucker.me still runs its own GitHub sync. Publishing the feed and building the lake tables come next, and the open decisions in [docs/design.md](docs/design.md) come before either.
