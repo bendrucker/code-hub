@@ -4,8 +4,6 @@ import type { EventKind } from "../github/windows";
 // added there breaks byKind below until this module covers it too.
 export type SyncKind = EventKind | "contributions";
 
-// The kinds the search connection answers for, which is every kind but the
-// contributions collection.
 export const SEARCH_KINDS = [
   "pr-authored",
   "pr-reviewed",

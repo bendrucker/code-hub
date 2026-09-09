@@ -108,8 +108,7 @@ export async function syncWindow(
 }
 
 export interface ContributionsRun extends SyncResult {
-  // The years GitHub says it holds contributions for, which is what a backfill
-  // walks rather than a range it picks itself.
+  // The years GitHub reports holding contributions for. A backfill walks these years directly.
   contributionYears: number[];
 }
 

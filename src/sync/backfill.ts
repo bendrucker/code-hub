@@ -20,7 +20,6 @@ export class InvalidMonthError extends Error {
 
 export interface BackfillResult {
   kind: SyncKind;
-  // The windows this call walked, in the order it walked them.
   windows: string[];
   pages: number;
   rowsChanged: number;
