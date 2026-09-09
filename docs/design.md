@@ -88,13 +88,13 @@ Every event's primary key is the GraphQL node ID GitHub returns, which is stable
 
 #### Tables
 
-| Table           | Columns                                                                                                                                                        |
-| --------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Table           | Columns                                                                                                                                                                   |
+| --------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | `pull_requests` | Node ID, repository, number, title, created at, merged at, closed at, state, additions, deletions, changed files, comment count, review count, base repository visibility |
-| `reviews`       | Node ID, repository, pull request number, state (approved, changes requested, commented), submitted at, pull request author                                      |
-| `issues`        | Node ID, repository, number, title, created at, closed at, state, comment count                                                                                  |
-| `commit_days`   | Repository, day, commit count                                                                                                                                   |
-| `repositories`  | Owner, name, description, url, stargazer count, primary language name and color, created at, fork, visibility                                                    |
+| `reviews`       | Node ID, repository, pull request number, state (approved, changes requested, commented), submitted at, pull request author                                               |
+| `issues`        | Node ID, repository, number, title, created at, closed at, state, comment count                                                                                           |
+| `commit_days`   | Repository, day, commit count                                                                                                                                             |
+| `repositories`  | Owner, name, description, url, stargazer count, primary language name and color, created at, fork, visibility                                                             |
 
 Additions, deletions, changed files, and the comment and review counts come off the pull request node's own fields. They cost nothing beyond the search page that already returned the node, and a record like largest PR falls out of them without opening a single diff.
 

@@ -48,21 +48,21 @@ See [docs/design.md](docs/design.md) for the full design, the extraction budget,
 
 One row per event, at the grain GitHub hands over without crawling each repository.
 
-| Table           | Grain                                                                                                                                  |
-| --------------- | -------------------------------------------------------------------------------------------------------------------------------------- |
+| Table           | Grain                                                                                                                                                                             |
+| --------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | `pull_requests` | One PR I authored: repository, number, title, created at, merged at, closed at, state, additions, deletions, changed files, comment and review counts, base repository visibility |
-| `reviews`       | One review I gave: repository, PR number, state, submitted at, PR author                                                                |
-| `issues`        | One issue: repository, number, title, created at, closed at, state, comment count                                                                 |
-| `commit_days`   | One repository on one day, carrying that day's commit count                                                                             |
-| `repositories`  | The dimension: owner, name, description, url, stars, primary language, created at, fork, visibility                                     |
+| `reviews`       | One review I gave: repository, PR number, state, submitted at, PR author                                                                                                          |
+| `issues`        | One issue: repository, number, title, created at, closed at, state, comment count                                                                                                 |
+| `commit_days`   | One repository on one day, carrying that day's commit count                                                                                                                       |
+| `repositories`  | The dimension: owner, name, description, url, stars, primary language, created at, fork, visibility                                                                               |
 
 A sync state table alongside these records the last window read per event type. Commits are daily counts because that is how `contributionsCollection` already exposes them. Per-commit history, comment bodies, and individual review comments stay out of the first version. Each one needs a walk of every PR in every repository, and per-PR counts give most of the analytics value at a hundredth of the requests.
 
 ## Secrets
 
-| Secret         | Location                              | Consumer                       |
-| --------------- | ------------------------------------- | ------------------------------ |
-| `GITHUB_TOKEN` | Worker secret (`wrangler secret put`) | Every GitHub GraphQL request   |
+| Secret         | Location                              | Consumer                     |
+| -------------- | ------------------------------------- | ---------------------------- |
+| `GITHUB_TOKEN` | Worker secret (`wrangler secret put`) | Every GitHub GraphQL request |
 
 The token's scope decides what the hub can see. What it publishes is a separate question, still open in [docs/design.md](docs/design.md).
 
@@ -79,14 +79,14 @@ bun install
 bun run dev
 ```
 
-| Command             | What it does                                       |
-| ------------------- | -------------------------------------------------- |
-| `bun run dev`       | Runs the Worker locally                            |
-| `bun run test`      | Runs the test suite                                |
-| `bun run typecheck` | Type checks without emitting                       |
-| `bun run lint`      | Lints                                              |
-| `bun run format`    | Formats                                            |
-| `bun run types`     | Regenerates Worker types from `wrangler.jsonc`     |
+| Command             | What it does                                   |
+| ------------------- | ---------------------------------------------- |
+| `bun run dev`       | Runs the Worker locally                        |
+| `bun run test`      | Runs the test suite                            |
+| `bun run typecheck` | Type checks without emitting                   |
+| `bun run lint`      | Lints                                          |
+| `bun run format`    | Formats                                        |
+| `bun run types`     | Regenerates Worker types from `wrangler.jsonc` |
 
 ## Status
 
