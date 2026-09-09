@@ -86,6 +86,18 @@ describe("fetchContributions", () => {
     expect(result.collection.totalRepositoriesWithContributedCommits).toBe(MAX_REPOSITORIES);
   });
 
+  it("flags a repository whose daily contributions did not all fit on the page", async () => {
+    const stub = stubFetch(() => contributionsResponse(2, 400));
+
+    const result = await fetchContributions("t0ken", "bendrucker", 2025, {
+      fetch: stub.fetch,
+      endpoint: ENDPOINT,
+      now: NOW,
+    });
+
+    expect(result.truncated).toBe(true);
+  });
+
   it("returns the raw body alongside the parsed collection", async () => {
     const stub = stubFetch(() => contributionsResponse(1));
 

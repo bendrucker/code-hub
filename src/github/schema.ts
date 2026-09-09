@@ -111,11 +111,19 @@ const reviewedPullRequestNode = z.object({
   title: z.string(),
   author,
   updatedAt: z.string(),
-  reviews: z.object({ nodes: nodes(review) }),
+  reviews: z.object({ totalCount: z.number(), nodes: nodes(review) }),
   repository,
 });
 
 export type ReviewedPullRequestNode = z.infer<typeof reviewedPullRequestNode>;
+
+// The reviews sub-connection returns one page and carries no cursor the outer
+// paginator could follow, so a pull request with more reviews than that has
+// lost the rest. Comparing the count is the detector, as it is for the search
+// cap and for a contribution year.
+export function reviewsTruncated(node: ReviewedPullRequestNode): boolean {
+  return node.reviews.nodes.length < node.reviews.totalCount;
+}
 
 const issueNode = z.object({
   __typename: z.literal("Issue"),

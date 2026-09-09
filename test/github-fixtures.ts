@@ -57,6 +57,7 @@ export function reviewedPullRequest(number: number) {
     author: { login: "someone" },
     updatedAt: "2026-08-03T00:00:00Z",
     reviews: {
+      totalCount: 1,
       nodes: [{ id: `PRR_${number}`, state: "APPROVED", submittedAt: "2026-08-03T00:00:00Z" }],
     },
     repository: repository(),
@@ -98,17 +99,17 @@ export function searchResponse(nodes: unknown[], overrides: SearchOverrides = {}
   });
 }
 
-export function commitContributions(count: number) {
+export function commitContributions(count: number, dayTotal = 1) {
   return Array.from({ length: count }, (_, index) => ({
     repository: repository(`repo-${index}`),
     contributions: {
-      totalCount: 1,
+      totalCount: dayTotal,
       nodes: [{ commitCount: 4, occurredAt: "2026-08-02T00:00:00Z" }],
     },
   }));
 }
 
-export function contributionsResponse(repositoryCount: number) {
+export function contributionsResponse(repositoryCount: number, dayTotal = 1) {
   return jsonResponse({
     data: {
       user: {
@@ -120,7 +121,7 @@ export function contributionsResponse(repositoryCount: number) {
           totalRepositoriesWithContributedCommits: repositoryCount,
           restrictedContributionsCount: 0,
           contributionYears: [2026, 2025],
-          commitContributionsByRepository: commitContributions(repositoryCount),
+          commitContributionsByRepository: commitContributions(repositoryCount, dayTotal),
         },
       },
       rateLimit: rateLimit(),

@@ -102,6 +102,7 @@ export const REVIEWED_PULL_REQUEST_SEARCH = `
           }
           updatedAt
           reviews(author: $login, first: 100) {
+            totalCount
             nodes {
               id
               state

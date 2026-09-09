@@ -64,8 +64,10 @@ export interface GraphQLResponse {
   rateLimit: RateLimit;
 }
 
+// A request-level failure comes back as `errors` with no `data` key at all, so
+// the envelope has to tolerate its absence for the check below to classify it.
 const envelope = z.object({
-  data: z.unknown(),
+  data: z.unknown().optional(),
   errors: graphqlErrors.optional(),
 });
 

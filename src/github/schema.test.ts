@@ -1,6 +1,11 @@
 import { describe, expect, it } from "vitest";
 import { issue, pullRequest, repository, reviewedPullRequest } from "../../test/github-fixtures";
-import { issueSearchPage, pullRequestSearchPage, reviewedPullRequestSearchPage } from "./schema";
+import {
+  issueSearchPage,
+  pullRequestSearchPage,
+  reviewedPullRequestSearchPage,
+  reviewsTruncated,
+} from "./schema";
 
 function page(nodes: unknown[], pageInfo: unknown) {
   return { search: { issueCount: nodes.length, pageInfo, nodes } };
@@ -55,6 +60,23 @@ describe("search nodes", () => {
       { id: "PRR_7", state: "APPROVED", submittedAt: "2026-08-03T00:00:00Z" },
     ]);
     expect(parsed.search.nodes[0]?.author).toEqual({ login: "someone" });
+  });
+
+  it("leaves a pull request whose reviews all fit unflagged", () => {
+    const parsed = reviewedPullRequestSearchPage.parse(
+      page([reviewedPullRequest(7)], { hasNextPage: false }),
+    );
+
+    expect(reviewsTruncated(parsed.search.nodes[0]!)).toBe(false);
+  });
+
+  it("flags a pull request carrying more reviews than the page returned", () => {
+    const node = reviewedPullRequest(7);
+    const parsed = reviewedPullRequestSearchPage.parse(
+      page([{ ...node, reviews: { ...node.reviews, totalCount: 120 } }], { hasNextPage: false }),
+    );
+
+    expect(reviewsTruncated(parsed.search.nodes[0]!)).toBe(true);
   });
 
   it("parses an issue node", () => {

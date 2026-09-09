@@ -31,6 +31,19 @@ export interface ContributionsResult {
   body: string;
 }
 
+// Two fixed lists with no cursor between them. The repository list is checked
+// against the maximum it was given, and each repository's daily contributions
+// against the total the same response reports, since a repository committed to
+// on more than a page of days in one year returns only the first page.
+function truncated(collection: ContributionsCollection): boolean {
+  return (
+    collection.commitContributionsByRepository.length >= MAX_REPOSITORIES ||
+    collection.commitContributionsByRepository.some(
+      ({ contributions }) => contributions.nodes.length < contributions.totalCount,
+    )
+  );
+}
+
 export async function fetchContributions(
   token: string,
   login: string,
@@ -65,7 +78,7 @@ export async function fetchContributions(
   return {
     year,
     collection,
-    truncated: collection.commitContributionsByRepository.length >= MAX_REPOSITORIES,
+    truncated: truncated(collection),
     rateLimit: response.rateLimit,
     body: response.body,
   };

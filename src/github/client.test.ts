@@ -68,6 +68,17 @@ describe("graphql", () => {
     expect(error).toMatchObject({ errors: [{ message: "Field 'nope' doesn't exist" }] });
   });
 
+  it("throws the typed error when a request-level failure omits data entirely", async () => {
+    const stub = stubFetch(() => jsonResponse({ errors: [{ message: "Query has node limit" }] }));
+
+    const error = await graphql("t0ken", "query Q { x }", {}, options(stub.fetch)).catch(
+      (thrown: unknown) => thrown,
+    );
+
+    expect(error).toBeInstanceOf(GraphQLQueryError);
+    expect(error).toMatchObject({ errors: [{ message: "Query has node limit" }] });
+  });
+
   it("stops on the rate limit floor rather than waiting for a 403", async () => {
     const stub = stubFetch(() =>
       jsonResponse({
