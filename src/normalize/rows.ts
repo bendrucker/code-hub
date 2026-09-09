@@ -1,6 +1,5 @@
-// Validated GitHub nodes in, store rows out. Nothing here converts a value:
-// timestamps stay the strings GitHub returned, so a row reads back as what the
-// archived page said.
+// Nothing here converts a value: timestamps stay the strings GitHub returned,
+// so a row reads back as what the archived page said.
 import type {
   ContributionsCollection,
   IssueNode,

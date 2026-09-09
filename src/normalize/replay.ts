@@ -38,8 +38,8 @@ export class MissingRawObjectError extends RawObjectError {
 }
 
 export interface Replay {
-  // Which archived fetch was replayed. It becomes `repositories.fetched_at`, so
-  // the row records when GitHub was asked rather than when the replay ran.
+  // `fetchedAt` becomes `repositories.fetched_at`, so the row records when
+  // GitHub was asked rather than when the replay ran.
   fetchedAt: string;
   rows: RowsChanged;
 }
