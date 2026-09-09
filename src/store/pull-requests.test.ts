@@ -1,6 +1,7 @@
 import { env } from "cloudflare:test";
 import { beforeEach, describe, expect, it } from "vitest";
 import { pullRequest, seedRepository } from "../../test/fixtures";
+import { markPublished, publishedAt, readRow } from "../../test/tables";
 import { upsertPullRequests } from "./pull-requests";
 
 interface StoredPullRequest {
@@ -23,15 +24,7 @@ interface StoredPullRequest {
 }
 
 function read(id: string): Promise<StoredPullRequest | null> {
-  return env.DB.prepare("SELECT * FROM pull_requests WHERE id = ?")
-    .bind(id)
-    .first<StoredPullRequest>();
-}
-
-function publish(id: string): Promise<unknown> {
-  return env.DB.prepare("UPDATE pull_requests SET published_at = ? WHERE id = ?")
-    .bind("2026-09-09T18:00:00Z", id)
-    .run();
+  return readRow<StoredPullRequest>(env.DB, "SELECT * FROM pull_requests WHERE id = ?", id);
 }
 
 describe("upsertPullRequests", () => {
@@ -75,17 +68,17 @@ describe("upsertPullRequests", () => {
 
   it("leaves a published row alone when nothing moved", async () => {
     await upsertPullRequests(env.DB, [pullRequest()]);
-    await publish("PR_pull1");
+    await markPublished(env.DB, "pull_requests", "PR_pull1");
 
     const changed = await upsertPullRequests(env.DB, [pullRequest()]);
 
     expect(changed).toBe(0);
-    expect((await read("PR_pull1"))?.published_at).toBe("2026-09-09T18:00:00Z");
+    expect((await read("PR_pull1"))?.published_at).toBe(publishedAt);
   });
 
   it("clears the publish marker when a column moved", async () => {
     await upsertPullRequests(env.DB, [pullRequest()]);
-    await publish("PR_pull1");
+    await markPublished(env.DB, "pull_requests", "PR_pull1");
 
     const changed = await upsertPullRequests(env.DB, [pullRequest({ commentCount: 1 })]);
 
@@ -97,7 +90,7 @@ describe("upsertPullRequests", () => {
 
   it("treats a column going null as a change", async () => {
     await upsertPullRequests(env.DB, [pullRequest()]);
-    await publish("PR_pull1");
+    await markPublished(env.DB, "pull_requests", "PR_pull1");
 
     const changed = await upsertPullRequests(env.DB, [
       pullRequest({ mergedAt: null, closedAt: null, state: "OPEN" }),

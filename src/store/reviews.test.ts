@@ -1,6 +1,7 @@
 import { env } from "cloudflare:test";
 import { beforeEach, describe, expect, it } from "vitest";
 import { review, seedRepository } from "../../test/fixtures";
+import { markPublished, publishedAt, readRow } from "../../test/tables";
 import { upsertReviews } from "./reviews";
 
 interface StoredReview {
@@ -14,13 +15,7 @@ interface StoredReview {
 }
 
 function read(id: string): Promise<StoredReview | null> {
-  return env.DB.prepare("SELECT * FROM reviews WHERE id = ?").bind(id).first<StoredReview>();
-}
-
-function publish(id: string): Promise<unknown> {
-  return env.DB.prepare("UPDATE reviews SET published_at = ? WHERE id = ?")
-    .bind("2026-09-09T18:00:00Z", id)
-    .run();
+  return readRow<StoredReview>(env.DB, "SELECT * FROM reviews WHERE id = ?", id);
 }
 
 describe("upsertReviews", () => {
@@ -55,17 +50,17 @@ describe("upsertReviews", () => {
 
   it("leaves a published row alone when nothing moved", async () => {
     await upsertReviews(env.DB, [review()]);
-    await publish("PRR_review1");
+    await markPublished(env.DB, "reviews", "PRR_review1");
 
     const changed = await upsertReviews(env.DB, [review()]);
 
     expect(changed).toBe(0);
-    expect((await read("PRR_review1"))?.published_at).toBe("2026-09-09T18:00:00Z");
+    expect((await read("PRR_review1"))?.published_at).toBe(publishedAt);
   });
 
   it("clears the publish marker when a column moved", async () => {
     await upsertReviews(env.DB, [review()]);
-    await publish("PRR_review1");
+    await markPublished(env.DB, "reviews", "PRR_review1");
 
     const changed = await upsertReviews(env.DB, [review({ state: "DISMISSED" })]);
 

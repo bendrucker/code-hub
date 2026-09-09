@@ -1,4 +1,4 @@
-import { type BindValue, upsertRows, upsertSql } from "./upsert";
+import { type BindValue, upsertWriter } from "./upsert";
 
 export type RepositoryVisibility = "PUBLIC" | "PRIVATE" | "INTERNAL";
 
@@ -32,34 +32,35 @@ const columns = [
   "fetched_at",
 ] as const;
 
-// `fetched_at` is written but not compared. Comparing it would make every
-// upsert a change, since it moves on every fetch by definition. It therefore
-// records the fetch that last produced different values rather than the last
-// fetch that read the repository.
-const sql = upsertSql({
-  table: "repositories",
-  columns,
-  conflict: ["id"],
-  compared: columns.filter((column) => column !== "id" && column !== "fetched_at"),
-});
+type Column = (typeof columns)[number];
 
-export function upsertRepositories(db: D1Database, rows: readonly Repository[]): Promise<number> {
-  return upsertRows(db, sql, rows, bind);
-}
+// `fetched_at` is written but not compared. Comparing it would make every upsert
+// a change, since it moves on every fetch by definition. It therefore records the
+// fetch that last produced different values rather than the last fetch that read
+// the repository.
+export const upsertRepositories = upsertWriter(
+  {
+    table: "repositories",
+    columns,
+    conflict: ["id"],
+    compared: columns.filter((column) => column !== "id" && column !== "fetched_at"),
+  },
+  bind,
+);
 
-function bind(row: Repository): BindValue[] {
-  return [
-    row.id,
-    row.owner,
-    row.name,
-    row.description,
-    row.url,
-    row.stargazerCount,
-    row.primaryLanguage,
-    row.primaryLanguageColor,
-    row.createdAt,
-    row.isFork ? 1 : 0,
-    row.visibility,
-    row.fetchedAt,
-  ];
+function bind(row: Repository): Record<Column, BindValue> {
+  return {
+    id: row.id,
+    owner: row.owner,
+    name: row.name,
+    description: row.description,
+    url: row.url,
+    stargazer_count: row.stargazerCount,
+    primary_language: row.primaryLanguage,
+    primary_language_color: row.primaryLanguageColor,
+    created_at: row.createdAt,
+    is_fork: row.isFork ? 1 : 0,
+    visibility: row.visibility,
+    fetched_at: row.fetchedAt,
+  };
 }

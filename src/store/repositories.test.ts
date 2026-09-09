@@ -1,6 +1,7 @@
 import { env } from "cloudflare:test";
 import { describe, expect, it } from "vitest";
 import { repository } from "../../test/fixtures";
+import { readRow } from "../../test/tables";
 import { upsertRepositories } from "./repositories";
 
 interface StoredRepository {
@@ -19,9 +20,7 @@ interface StoredRepository {
 }
 
 function read(id: string): Promise<StoredRepository | null> {
-  return env.DB.prepare("SELECT * FROM repositories WHERE id = ?")
-    .bind(id)
-    .first<StoredRepository>();
+  return readRow<StoredRepository>(env.DB, "SELECT * FROM repositories WHERE id = ?", id);
 }
 
 describe("upsertRepositories", () => {

@@ -1,4 +1,4 @@
-import { type BindValue, upsertRows, upsertSql } from "./upsert";
+import { type BindValue, upsertWriter } from "./upsert";
 
 export type PullRequestState = "OPEN" | "CLOSED" | "MERGED";
 
@@ -38,38 +38,33 @@ const columns = [
   "updated_at",
 ] as const;
 
+type Column = (typeof columns)[number];
+
 // `updated_at` is compared along with everything else. It is GitHub's own
-// updatedAt rather than a local write time, so a move in it is GitHub saying
-// the pull request changed, and the feed should carry the row again even when
-// what changed is a field this table does not store.
-const sql = upsertSql({
-  table: "pull_requests",
-  columns,
-  conflict: ["id"],
-  compared: columns.filter((column) => column !== "id"),
-  clearsPublishedAt: true,
-});
+// updatedAt rather than a local write time, so a move in it is GitHub saying the
+// pull request changed, and the feed should carry the row again even when what
+// changed is a field this table does not store.
+export const upsertPullRequests = upsertWriter(
+  { table: "pull_requests", columns, conflict: ["id"], clearsPublishedAt: true },
+  bind,
+);
 
-export function upsertPullRequests(db: D1Database, rows: readonly PullRequest[]): Promise<number> {
-  return upsertRows(db, sql, rows, bind);
-}
-
-function bind(row: PullRequest): BindValue[] {
-  return [
-    row.id,
-    row.repositoryId,
-    row.number,
-    row.title,
-    row.author,
-    row.createdAt,
-    row.mergedAt,
-    row.closedAt,
-    row.state,
-    row.additions,
-    row.deletions,
-    row.changedFiles,
-    row.commentCount,
-    row.reviewCount,
-    row.updatedAt,
-  ];
+function bind(row: PullRequest): Record<Column, BindValue> {
+  return {
+    id: row.id,
+    repository_id: row.repositoryId,
+    number: row.number,
+    title: row.title,
+    author: row.author,
+    created_at: row.createdAt,
+    merged_at: row.mergedAt,
+    closed_at: row.closedAt,
+    state: row.state,
+    additions: row.additions,
+    deletions: row.deletions,
+    changed_files: row.changedFiles,
+    comment_count: row.commentCount,
+    review_count: row.reviewCount,
+    updated_at: row.updatedAt,
+  };
 }

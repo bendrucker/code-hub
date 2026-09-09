@@ -1,4 +1,4 @@
-import { type BindValue, upsertRows, upsertSql } from "./upsert";
+import { type BindValue, upsertWriter } from "./upsert";
 
 export interface CommitDay {
   repositoryId: string;
@@ -8,17 +8,17 @@ export interface CommitDay {
 
 const columns = ["repository_id", "day", "commit_count"] as const;
 
-const sql = upsertSql({
-  table: "commit_days",
-  columns,
-  conflict: ["repository_id", "day"],
-  compared: ["commit_count"],
-});
+type Column = (typeof columns)[number];
 
-export function upsertCommitDays(db: D1Database, rows: readonly CommitDay[]): Promise<number> {
-  return upsertRows(db, sql, rows, bind);
-}
+export const upsertCommitDays = upsertWriter(
+  { table: "commit_days", columns, conflict: ["repository_id", "day"] },
+  bind,
+);
 
-function bind(row: CommitDay): BindValue[] {
-  return [row.repositoryId, row.day, row.commitCount];
+function bind(row: CommitDay): Record<Column, BindValue> {
+  return {
+    repository_id: row.repositoryId,
+    day: row.day,
+    commit_count: row.commitCount,
+  };
 }

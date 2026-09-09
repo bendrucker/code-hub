@@ -1,4 +1,4 @@
-import { type BindValue, upsertRows, upsertSql } from "./upsert";
+import { type BindValue, upsertWriter } from "./upsert";
 
 export type ReviewState = "PENDING" | "COMMENTED" | "APPROVED" | "CHANGES_REQUESTED" | "DISMISSED";
 
@@ -20,25 +20,20 @@ const columns = [
   "submitted_at",
 ] as const;
 
-const sql = upsertSql({
-  table: "reviews",
-  columns,
-  conflict: ["id"],
-  compared: columns.filter((column) => column !== "id"),
-  clearsPublishedAt: true,
-});
+type Column = (typeof columns)[number];
 
-export function upsertReviews(db: D1Database, rows: readonly Review[]): Promise<number> {
-  return upsertRows(db, sql, rows, bind);
-}
+export const upsertReviews = upsertWriter(
+  { table: "reviews", columns, conflict: ["id"], clearsPublishedAt: true },
+  bind,
+);
 
-function bind(row: Review): BindValue[] {
-  return [
-    row.id,
-    row.repositoryId,
-    row.pullRequestNumber,
-    row.pullRequestAuthor,
-    row.state,
-    row.submittedAt,
-  ];
+function bind(row: Review): Record<Column, BindValue> {
+  return {
+    id: row.id,
+    repository_id: row.repositoryId,
+    pull_request_number: row.pullRequestNumber,
+    pull_request_author: row.pullRequestAuthor,
+    state: row.state,
+    submitted_at: row.submittedAt,
+  };
 }

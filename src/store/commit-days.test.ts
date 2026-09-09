@@ -1,6 +1,7 @@
 import { env } from "cloudflare:test";
 import { beforeEach, describe, expect, it } from "vitest";
 import { commitDay, seedRepository } from "../../test/fixtures";
+import { readRow } from "../../test/tables";
 import { upsertCommitDays } from "./commit-days";
 
 interface StoredCommitDay {
@@ -10,9 +11,12 @@ interface StoredCommitDay {
 }
 
 function read(day: string): Promise<StoredCommitDay | null> {
-  return env.DB.prepare("SELECT * FROM commit_days WHERE repository_id = ? AND day = ?")
-    .bind("R_repo1", day)
-    .first<StoredCommitDay>();
+  return readRow<StoredCommitDay>(
+    env.DB,
+    "SELECT * FROM commit_days WHERE repository_id = ? AND day = ?",
+    "R_repo1",
+    day,
+  );
 }
 
 describe("upsertCommitDays", () => {

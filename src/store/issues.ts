@@ -1,4 +1,4 @@
-import { type BindValue, upsertRows, upsertSql } from "./upsert";
+import { type BindValue, upsertWriter } from "./upsert";
 
 export type IssueState = "OPEN" | "CLOSED";
 
@@ -28,29 +28,24 @@ const columns = [
   "updated_at",
 ] as const;
 
-const sql = upsertSql({
-  table: "issues",
-  columns,
-  conflict: ["id"],
-  compared: columns.filter((column) => column !== "id"),
-  clearsPublishedAt: true,
-});
+type Column = (typeof columns)[number];
 
-export function upsertIssues(db: D1Database, rows: readonly Issue[]): Promise<number> {
-  return upsertRows(db, sql, rows, bind);
-}
+export const upsertIssues = upsertWriter(
+  { table: "issues", columns, conflict: ["id"], clearsPublishedAt: true },
+  bind,
+);
 
-function bind(row: Issue): BindValue[] {
-  return [
-    row.id,
-    row.repositoryId,
-    row.number,
-    row.title,
-    row.author,
-    row.createdAt,
-    row.closedAt,
-    row.state,
-    row.commentCount,
-    row.updatedAt,
-  ];
+function bind(row: Issue): Record<Column, BindValue> {
+  return {
+    id: row.id,
+    repository_id: row.repositoryId,
+    number: row.number,
+    title: row.title,
+    author: row.author,
+    created_at: row.createdAt,
+    closed_at: row.closedAt,
+    state: row.state,
+    comment_count: row.commentCount,
+    updated_at: row.updatedAt,
+  };
 }
