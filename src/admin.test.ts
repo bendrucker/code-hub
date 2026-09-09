@@ -1,5 +1,9 @@
 import { env, SELF } from "cloudflare:test";
 import { afterEach, beforeEach, describe, expect, it, test } from "vitest";
+import { pullRequest, seedRepository } from "../test/fixtures";
+import { emptyBucket } from "../test/r2";
+import { LAKE_TABLES, tableKey } from "./lake";
+import { upsertPullRequests } from "./store";
 import { advance } from "./sync/state";
 import { finishRun, startRun } from "./sync/runs";
 
@@ -11,6 +15,10 @@ function get(headers: HeadersInit = {}): Promise<Response> {
 
 function post(query: string, headers: HeadersInit = {}): Promise<Response> {
   return SELF.fetch(`https://code-hub.test/admin/backfill?${query}`, { method: "POST", headers });
+}
+
+function postLake(headers: HeadersInit = {}): Promise<Response> {
+  return SELF.fetch("https://code-hub.test/admin/lake", { method: "POST", headers });
 }
 
 const authorization = { Authorization: `Bearer ${token}` };
@@ -102,6 +110,64 @@ describe("GET /admin/sync", () => {
     expect(response.status).toBe(200);
     expect(await response.json()).toMatchObject({
       failures: [{ kind: "pr-drafted", error: "retired kind" }],
+    });
+  });
+
+  it("reports no lake build before the first one runs", async () => {
+    await expect((await get(authorization)).json()).resolves.toMatchObject({ lake: null });
+  });
+
+  it("reports the last lake build", async () => {
+    await emptyBucket(env.LAKE);
+    await seedRepository(env.DB);
+    await postLake(authorization);
+
+    const response = await get(authorization);
+
+    await expect(response.json()).resolves.toMatchObject({
+      lake: { rowCounts: { repositories: 1 }, error: null },
+    });
+  });
+});
+
+describe("POST /admin/lake", () => {
+  beforeEach(() => emptyBucket(env.LAKE));
+
+  it("does not exist until the token is configured", async () => {
+    delete env.ADMIN_TOKEN;
+
+    expect((await postLake(authorization)).status).toBe(404);
+  });
+
+  it("rejects a request without the token", async () => {
+    expect((await postLake()).status).toBe(401);
+  });
+
+  it("writes every table and reports what it counted", async () => {
+    await seedRepository(env.DB);
+    await upsertPullRequests(env.DB, [pullRequest()]);
+
+    const response = await postLake(authorization);
+
+    expect(response.status).toBe(200);
+    await expect(response.json()).resolves.toMatchObject({
+      rowCounts: { repositories: 1, pull_requests: 1, reviews: 0, issues: 0, commit_days: 0 },
+    });
+    const listed = await env.LAKE.list();
+    expect(listed.objects.map((object) => object.key).toSorted()).toEqual(
+      LAKE_TABLES.map(tableKey).toSorted(),
+    );
+  });
+
+  it("answers 500 with the reason a table could not encode", async () => {
+    await seedRepository(env.DB);
+    await env.DB.prepare("UPDATE repositories SET is_fork = 2").run();
+
+    const response = await postLake(authorization);
+
+    expect(response.status).toBe(500);
+    await expect(response.json()).resolves.toMatchObject({
+      error: expect.stringContaining("is_fork"),
     });
   });
 });

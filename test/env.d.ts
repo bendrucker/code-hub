@@ -2,6 +2,7 @@
 
 interface TestBindings {
   TEST_MIGRATIONS: import("cloudflare:test").D1Migration[];
+  TEST_CRONS: string[];
 }
 
 declare namespace Cloudflare {

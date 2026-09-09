@@ -4,7 +4,7 @@ System of record for GitHub contribution data: pull requests, reviews, issues, a
 
 ## Stack
 
-Cloudflare Workers (TypeScript), Bun, Wrangler. Storage: D1 (`DB`), R2 (`RAW` for API responses, `LAKE` for Parquet output). `LAKE` is activity-hub's bucket, written under a `github/` prefix so one DuckDB session can join rides against pull requests. An hourly cron drives the sync. Config lives in `wrangler.jsonc`.
+Cloudflare Workers (TypeScript), Bun, Wrangler. Storage: D1 (`DB`), R2 (`RAW` for API responses, `LAKE` for Parquet output). `LAKE` is activity-hub's bucket, written under a `github/` prefix so one DuckDB session can join rides against pull requests. Two cron triggers drive the Worker: an hourly sync and a nightly lake build. Config lives in `wrangler.jsonc`.
 
 ## Commands
 
@@ -43,4 +43,10 @@ One call walks `BACKFILL_WINDOWS` monthly windows and answers with `next`, which
 
 ## Secrets
 
-Worker secrets are set with `wrangler secret put`, never committed. `wrangler dev` reads them from `.dev.vars`, which is gitignored. `GITHUB_TOKEN` signs every GraphQL and search request, and it sees private repositories, so what the feed publishes about them is a decision the ingest path owns. `ADMIN_TOKEN` guards `/admin/sync` and `/admin/backfill`, and both answer 404 while it is unset so an unconfigured deployment has no admin surface. Public, non-sensitive identifiers belong in `wrangler.jsonc` as `vars`: `GITHUB_LOGIN` is whose history the hub reads, and `BACKFILL_WINDOWS` is how many windows one backfill call walks.
+Worker secrets are set with `wrangler secret put`, never committed. `wrangler dev` reads them from `.dev.vars`, which is gitignored. `GITHUB_TOKEN` signs every GraphQL and search request, and it sees private repositories, so what the feed publishes about them is a decision the ingest path owns. `ADMIN_TOKEN` guards `/admin/sync`, `/admin/backfill`, and `/admin/lake`, and all three answer 404 while it is unset so an unconfigured deployment has no admin surface. Public, non-sensitive identifiers belong in `wrangler.jsonc` as `vars`: `GITHUB_LOGIN` is whose history the hub reads, and `BACKFILL_WINDOWS` is how many windows one backfill call walks.
+
+## Lake
+
+The nightly cron rebuilds every lake table from D1 into Snappy Parquet under `github/v1/` in `activity-hub-lake`. `scheduled` picks the build over the sync by matching `controller.cron` against `LAKE_CRON` in `src/index.ts`, which a test holds against the triggers `wrangler.jsonc` configures. A cron expression that changes in one place and not the other leaves the lake unbuilt and reports nothing.
+
+Every table encodes before any is written, so a failure leaves the bucket on the last complete build. `lake_builds` records the row counts or the error, and `GET /admin/sync` reports the most recent one. `POST /admin/lake` runs the same build for a schema change that should not wait for the next night.

@@ -203,9 +203,10 @@ For sizing: the site's current tables report 62 repositories touched in 2026, wi
 ## Operations
 
 - The hourly cron runs one `updated:>` search per event type plus one `contributionsCollection` call for the current year.
+- A second cron rebuilds the lake at 09:30 UTC. It sits off the hour so it never shares an instant with a sync invocation, and `scheduled` tells the two apart by the cron expression.
 - `GITHUB_TOKEN` is a Worker secret, set with `wrangler secret put`. It is the only credential the hub holds.
 - Migrations apply to the hub's D1 from CI on merge to `main`, matching how the site and Activity Hub both work.
-- An admin route reports the last successful sync per event type, the lag on the oldest window still unread, and recent failures, in the shape of Activity Hub's `/admin/pipeline`.
+- An admin route reports the last successful sync per event type, the lag on the oldest window still unread, recent failures, and the last lake build, in the shape of Activity Hub's `/admin/pipeline`.
 - The `contributionsCollection` totals are checked against event table counts per year. Drift is the signal that a window truncated, and there is no other way to notice a silent 1,000-result cap.
 - The backfill is roughly 500 search requests plus one per contribution year. That sits inside the 1,000 subrequests a paid Workers invocation gets and an order of magnitude past the free tier's 50, so paging it across invocations is a platform constraint before it is a wall clock one.
 - Backoff reads `rateLimit` off each response rather than waiting for a 403. The existing `rateLimitBackoff` in the site's `scripts/backfill-github-activity.ts` is the shape to follow.

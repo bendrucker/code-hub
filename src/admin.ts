@@ -1,4 +1,5 @@
 import { monthWindow } from "./github/windows";
+import { buildLake, type LakeBuild, readLatestBuild } from "./lake";
 import {
   backfill,
   BACKFILL_START,
@@ -22,6 +23,7 @@ export interface SyncStatus {
   generatedAt: string;
   kinds: Record<SyncKind, KindStatus>;
   failures: SyncRun[];
+  lake: LakeBuild | null;
 }
 
 export async function handleSyncStatus(request: Request, env: Env): Promise<Response> {
@@ -31,16 +33,18 @@ export async function handleSyncStatus(request: Request, env: Env): Promise<Resp
   }
 
   try {
-    const [watermarks, runs, failures] = await Promise.all([
+    const [watermarks, runs, failures, lake] = await Promise.all([
       readWatermarks(env.DB),
       lastRuns(env.DB),
       recentFailures(env.DB, FAILURE_LIMIT),
+      readLatestBuild(env.DB),
     ]);
 
     const status: SyncStatus = {
       generatedAt: new Date().toISOString(),
       kinds: byKind((kind) => ({ watermark: watermarks[kind], lastRun: runs[kind] })),
       failures,
+      lake,
     };
     return Response.json(status);
   } catch (error) {
@@ -76,6 +80,23 @@ export async function handleBackfill(request: Request, env: Env): Promise<Respon
     if (error instanceof MissingSecretError) {
       return Response.json({ error: error.message }, { status: 503 });
     }
+    return Response.json({ error: String(error) }, { status: 500 });
+  }
+}
+
+// The same build the nightly cron runs, for a schema change that wants the
+// tables rewritten before the next night rather than after it.
+export async function handleLakeBuild(request: Request, env: Env): Promise<Response> {
+  const refused = await authorize(request, env);
+  if (refused !== null) {
+    return refused;
+  }
+
+  try {
+    return Response.json(await buildLake(env));
+  } catch (error) {
+    // `lake_builds` already holds the reason, and this saves the caller a
+    // round trip through /admin/sync to read it.
     return Response.json({ error: String(error) }, { status: 500 });
   }
 }
